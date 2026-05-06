@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Imports\ContactsImport;
 use App\Models\Contact;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Maatwebsite\Excel\Excel;
 
 class ContactController extends Controller
 {
@@ -27,18 +29,15 @@ class ContactController extends Controller
 
                     $q->where('name', 'like', '%' . $request->search . '%')
 
-                      ->orWhere('phone', 'like', '%' . $request->search . '%')
+                        ->orWhere('phone', 'like', '%' . $request->search . '%')
 
-                      ->orWhere('email', 'like', '%' . $request->search . '%');
-
+                        ->orWhere('email', 'like', '%' . $request->search . '%');
                 });
-
             })
 
             ->when($request->status, function ($query) use ($request) {
 
                 $query->where('status', $request->status);
-
             })
 
             ->latest()
@@ -46,7 +45,6 @@ class ContactController extends Controller
             ->paginate(20);
 
         return response()->json($contacts);
-
     }
 
 
@@ -104,7 +102,6 @@ class ContactController extends Controller
         if ($request->tags) {
 
             $contact->tags()->sync($request->tags);
-
         }
 
 
@@ -115,7 +112,6 @@ class ContactController extends Controller
             'data' => $contact->load('tags')
 
         ]);
-
     }
 
 
@@ -134,7 +130,6 @@ class ContactController extends Controller
             ->findOrFail($id);
 
         return response()->json($contact);
-
     }
 
 
@@ -180,7 +175,6 @@ class ContactController extends Controller
         if ($request->tags) {
 
             $contact->tags()->sync($request->tags);
-
         }
 
 
@@ -191,7 +185,6 @@ class ContactController extends Controller
             'data' => $contact->load('tags')
 
         ]);
-
     }
 
 
@@ -214,6 +207,31 @@ class ContactController extends Controller
             'message' => 'Contact deleted successfully'
 
         ]);
+    }
 
+    public function import(Request $request)
+    {
+
+        $request->validate([
+
+            'file' => 'required|mimes:csv,xlsx,xls'
+
+        ]);
+
+
+        Excel::import(
+
+            new ContactsImport,
+
+            $request->file('file')
+
+        );
+
+
+        return response()->json([
+
+            'message' => 'Contacts imported successfully'
+
+        ]);
     }
 }
