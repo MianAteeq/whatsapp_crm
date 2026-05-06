@@ -11,7 +11,10 @@ Route::post('/login', [AuthController::class, 'login']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
-
+Route::get(
+        'contacts/advance-search',
+        [ContactController::class, 'advanceSearch']
+    );
     Route::apiResource('contacts', ContactController::class);
     Route::apiResource('tags', TagController::class);
     Route::post(
@@ -19,8 +22,5 @@ Route::middleware('auth:sanctum')->group(function () {
         [ContactController::class, 'import']
     );
 
-    Route::get(
-    'contacts/advance-search',
-    [ContactController::class, 'advanceSearch']
-);
+   
 });
