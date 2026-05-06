@@ -18,4 +18,9 @@ Route::middleware('auth:sanctum')->group(function () {
         'contacts/import',
         [ContactController::class, 'import']
     );
+
+    Route::get(
+    'contacts/advance-search',
+    [ContactController::class, 'advanceSearch']
+);
 });

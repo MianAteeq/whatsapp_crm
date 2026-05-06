@@ -235,4 +235,230 @@ class ContactController extends Controller
 
         ]);
     }
+
+   public function advanceSearch(Request $request)
+{
+
+    $request->validate([
+
+        'search' => 'nullable|string',
+
+        'status' => 'nullable|in:active,inactive',
+
+        'tags' => 'nullable|array',
+
+        'last_touchpoint' => 'nullable|string'
+
+    ]);
+
+
+    $contacts = Contact::with('tags')
+
+        ->where(
+            'tenant_id',
+            auth()->user()->tenant_id
+        );
+
+
+
+
+    // ==========================================
+    // SEARCH
+    // ==========================================
+
+    if ($request->filled('search')) {
+
+        $search = $request->search;
+
+        $contacts->where(function ($query) use ($search) {
+
+            // ==================================
+            // CONTACT FIELD SEARCH
+            // ==================================
+
+            $query->where(
+                    'name',
+                    'like',
+                    '%' . $search . '%'
+                )
+
+                ->orWhere(
+                    'phone',
+                    'like',
+                    '%' . $search . '%'
+                )
+
+                ->orWhere(
+                    'email',
+                    'like',
+                    '%' . $search . '%'
+                )
+
+                ->orWhere(
+                    'company',
+                    'like',
+                    '%' . $search . '%'
+                );
+
+
+            // ==================================
+            // TAG SEARCH
+            // ==================================
+
+            $query->orWhereHas('tags', function ($tagQuery) use ($search) {
+
+                $tagQuery->where(
+                    'name',
+                    'like',
+                    '%' . $search . '%'
+                );
+
+            });
+
+        });
+
+    }
+
+
+
+
+    // ==========================================
+    // STATUS FILTER
+    // ==========================================
+
+    if ($request->filled('status')) {
+
+        $contacts->where(
+            'status',
+            $request->status
+        );
+
+    }
+
+
+
+
+    // ==========================================
+    // TAG FILTER
+    // ==========================================
+
+    if ($request->filled('tags')) {
+
+        $contacts->whereHas('tags', function ($query) use ($request) {
+
+            $query->whereIn(
+                'tags.id',
+                $request->tags
+            );
+
+        });
+
+    }
+
+
+
+
+    // ==========================================
+    // LAST TOUCHPOINT FILTER
+    // ==========================================
+
+    if ($request->filled('last_touchpoint')) {
+
+        switch ($request->last_touchpoint) {
+
+            case 'today':
+
+                $contacts->whereDate(
+                    'updated_at',
+                    today()
+                );
+
+                break;
+
+
+
+            case '7_days':
+
+                $contacts->where(
+                    'updated_at',
+                    '>=',
+                    now()->subDays(7)
+                );
+
+                break;
+
+
+
+            case '30_days':
+
+                $contacts->where(
+                    'updated_at',
+                    '>=',
+                    now()->subDays(30)
+                );
+
+                break;
+
+
+
+            case '90_days':
+
+                $contacts->where(
+                    'updated_at',
+                    '>=',
+                    now()->subDays(90)
+                );
+
+                break;
+
+        }
+
+    }
+
+
+
+
+    // ==========================================
+    // REMOVE DUPLICATES
+    // IMPORTANT FOR TAG RELATIONS
+    // ==========================================
+
+    $contacts = $contacts
+
+        ->distinct()
+
+        ->latest()
+
+        ->paginate(20);
+
+
+
+
+    // ==========================================
+    // RESPONSE
+    // ==========================================
+
+    return response()->json([
+
+        'success' => true,
+
+        'message' => 'Contacts fetched successfully',
+
+        'filters' => [
+
+            'search' => $request->search,
+
+            'status' => $request->status,
+
+            'tags' => $request->tags,
+
+            'last_touchpoint' => $request->last_touchpoint
+
+        ],
+
+        'data' => $contacts
+
+    ]);
+
+}
 }
