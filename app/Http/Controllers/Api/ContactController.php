@@ -7,7 +7,8 @@ use App\Imports\ContactsImport;
 use App\Models\Contact;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Maatwebsite\Excel\Excel;
+use Maatwebsite\Excel\Facades\Excel;
+
 
 class ContactController extends Controller
 {
