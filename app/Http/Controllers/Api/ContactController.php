@@ -95,7 +95,7 @@ class ContactController extends Controller
 
             'notes' => $request->notes,
 
-            'status' => $request->status ?? 'active'
+            'status' => strtolower($request->status) ?? 'active'
 
         ]);
 
@@ -171,7 +171,7 @@ class ContactController extends Controller
 
             'notes' => $request->notes,
 
-            'status' => $request->status
+            'status' => strtolower($request->status) ?? 'active'
 
         ]);
 
