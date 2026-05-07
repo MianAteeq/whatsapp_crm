@@ -9,37 +9,69 @@ use Illuminate\Http\Request;
 
 class ConversationController extends Controller
 {
-    public function index()
-    {
+   public function index(Request $request)
+{
 
-        $conversations = Conversation::with('contact')
+    $conversations = Conversation::with([
 
-            ->where(
-                'tenant_id',
-                auth()->user()->tenant_id
-            )
+            'contact'
 
-            ->latest('last_message_at')
+        ])
 
-            ->paginate(20);
-
-
-        return response()->json($conversations);
-    }
-
-    public function messages($id)
-    {
-
-        $messages = Message::where(
-            'conversation_id',
-            $id
+        ->where(
+            'tenant_id',
+            auth()->user()->tenant_id
         )
 
-            ->latest()
+        ->latest('last_message_at')
 
-            ->paginate(50);
+        ->paginate(20);
 
 
-        return response()->json($messages);
-    }
+    return response()->json([
+
+        'success' => true,
+
+        'data' => $conversations
+
+    ]);
+
+}
+
+    public function messages($id)
+{
+
+    $conversation = Conversation::where(
+
+        'tenant_id',
+        auth()->user()->tenant_id
+
+    )->findOrFail($id);
+
+
+
+
+    $messages = Message::where(
+
+            'conversation_id',
+            $conversation->id
+
+        )
+
+        ->latest()
+
+        ->paginate(50);
+
+
+
+
+    return response()->json([
+
+        'success' => true,
+
+        'data' => $messages
+
+    ]);
+
+}
 }

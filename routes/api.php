@@ -2,7 +2,9 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ContactController;
+use App\Http\Controllers\Api\ConversationController;
 use App\Http\Controllers\Api\TagController;
+use App\Http\Controllers\Api\WhatsappMessageController;
 use App\Http\Controllers\Api\WhatsappSettingController;
 use App\Http\Controllers\Api\WhatsappWebhookController;
 use Illuminate\Http\Request;
@@ -38,15 +40,51 @@ Route::middleware('auth:sanctum')->group(function () {
         [WhatsappSettingController::class, 'testConnection']
     );
 
-    Route::get(
+     Route::get(
+
         'conversations',
+
         [ConversationController::class, 'index']
+
     );
 
+
+
     Route::get(
+
         'conversations/{id}/messages',
+
         [ConversationController::class, 'messages']
+
     );
+     Route::get(
+
+        'conversations',
+
+        [ConversationController::class, 'index']
+
+    );
+
+
+
+    Route::get(
+
+        'conversations/{id}/messages',
+
+        [ConversationController::class, 'messages']
+
+    );
+
+
+ Route::post(
+
+        'messages/send',
+
+        [WhatsappMessageController::class, 'send']
+
+    );
+
+
 });
 
 Route::get(
