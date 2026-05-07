@@ -38,7 +38,10 @@ Route::middleware('auth:sanctum')->group(function () {
         [WhatsappSettingController::class, 'testConnection']
     );
 
-    Route::get(
+    
+});
+
+Route::get(
         '/webhook/whatsapp',
         [WhatsappWebhookController::class, 'verify']
     );
@@ -46,4 +49,3 @@ Route::middleware('auth:sanctum')->group(function () {
         '/webhook/whatsapp',
         [WhatsappWebhookController::class, 'handle']
     );
-});
