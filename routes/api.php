@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ContactController;
 use App\Http\Controllers\Api\TagController;
 use App\Http\Controllers\Api\WhatsappSettingController;
+use App\Http\Controllers\Api\WhatsappWebhookController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -35,5 +36,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post(
         'whatsapp/test',
         [WhatsappSettingController::class, 'testConnection']
+    );
+
+    Route::get(
+        '/webhook/whatsapp',
+        [WhatsappWebhookController::class, 'verify']
+    );
+    Route::post(
+        '/webhook/whatsapp',
+        [WhatsappWebhookController::class, 'handle']
     );
 });
