@@ -16,7 +16,11 @@ class Message extends Model
         'message',
         'type',
         'status',
-        'payload'
+        'payload',
+        'media_url',
+        'media_type',
+        'mime_type',
+        'file_name'
 
     ];
 
