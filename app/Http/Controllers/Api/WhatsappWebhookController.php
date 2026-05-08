@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\MessageReceived;
 use App\Http\Controllers\Controller;
 use App\Models\Contact;
 use App\Models\Conversation;
@@ -194,7 +195,7 @@ class WhatsappWebhookController extends Controller
                 // STORE MESSAGE
                 // ======================================
 
-                Message::create([
+                $message = Message::create([
 
                     'tenant_id' => $setting->tenant_id,
 
@@ -229,6 +230,10 @@ class WhatsappWebhookController extends Controller
                     'unread_count' => $conversation->unread_count + 1
 
                 ]);
+
+                broadcast(
+                    new MessageReceived($message)
+                )->toOthers();
             }
         }
 
@@ -238,7 +243,7 @@ class WhatsappWebhookController extends Controller
         // MESSAGE STATUS
         // ==========================================
 
-       if (isset($value['statuses'])) {
+        if (isset($value['statuses'])) {
 
             foreach ($value['statuses'] as $status) {
 
@@ -253,10 +258,10 @@ class WhatsappWebhookController extends Controller
                     'status' => $status['status']
 
                 ]);
-
             }
+        }
 
-}
+
 
 
 
