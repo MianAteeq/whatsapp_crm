@@ -7,8 +7,14 @@ Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
 });
 
 Broadcast::channel('chat.{id}', function ($user, $id) {
+
+    logger([
+        'USER_ID' => $user?->id,
+        'CHANNEL_ID' => $id,
+    ]);
+
     return true;
 
-    // Example secure version:
+    // Secure version:
     // return (int) $user->id === (int) $id;
 });
