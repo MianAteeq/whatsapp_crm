@@ -57,23 +57,11 @@ Route::middleware('auth:sanctum')->group(function () {
         [ConversationController::class, 'messages']
 
     );
-     Route::get(
-
-        'conversations',
-
-        [ConversationController::class, 'index']
-
-    );
+    
 
 
 
-    Route::get(
-
-        'conversations/{id}/messages',
-
-        [ConversationController::class, 'messages']
-
-    );
+  
 
 
  Route::post(

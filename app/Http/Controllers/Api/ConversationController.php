@@ -58,7 +58,7 @@ class ConversationController extends Controller
 
         )
 
-        ->latest()
+        ->orderBy('created_at', 'asc')
 
         ->paginate(50);
 
