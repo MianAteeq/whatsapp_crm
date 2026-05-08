@@ -9,69 +9,112 @@ use Illuminate\Http\Request;
 
 class ConversationController extends Controller
 {
-   public function index(Request $request)
-{
+    public function index(Request $request)
+    {
 
-    $conversations = Conversation::with([
+        $conversations = Conversation::with([
 
             'contact'
 
         ])
 
-        ->where(
-            'tenant_id',
-            auth()->user()->tenant_id
-        )
+            ->where(
+                'tenant_id',
+                auth()->user()->tenant_id
+            )
 
-        ->latest('last_message_at')
+            ->latest('last_message_at')
 
-        ->paginate(20);
+            ->paginate(20);
 
 
-    return response()->json([
+        return response()->json([
 
-        'success' => true,
+            'success' => true,
 
-        'data' => $conversations
+            'data' => $conversations
 
-    ]);
-
-}
+        ]);
+    }
 
     public function messages($id)
-{
+    {
 
-    $conversation = Conversation::where(
+        $conversation = Conversation::where(
 
-        'tenant_id',
-        auth()->user()->tenant_id
+            'tenant_id',
+            auth()->user()->tenant_id
 
-    )->findOrFail($id);
-
-
+        )->findOrFail($id);
 
 
-    $messages = Message::where(
+
+
+        $messages = Message::where(
 
             'conversation_id',
             $conversation->id
 
         )
 
-        ->orderBy('created_at', 'asc')
+            ->orderBy('created_at', 'asc')
 
-        ->paginate(50);
-
-
+            ->paginate(50);
 
 
-    return response()->json([
 
-        'success' => true,
 
-        'data' => $messages
+        return response()->json([
 
-    ]);
+            'success' => true,
 
-}
+            'data' => $messages
+
+        ]);
+    }
+
+    public function markRead($id)
+    {
+
+        // ==========================================
+        // FIND CONVERSATION
+        // ==========================================
+
+        $conversation = Conversation::where(
+
+            'tenant_id',
+            auth()->user()->tenant_id
+
+        )->findOrFail($id);
+
+
+
+
+        // ==========================================
+        // RESET UNREAD COUNT
+        // ==========================================
+
+        $conversation->update([
+
+            'unread_count' => 0
+
+        ]);
+
+
+
+
+        // ==========================================
+        // RESPONSE
+        // ==========================================
+
+        return response()->json([
+
+            'success' => true,
+
+            'message' => 'Conversation marked as read',
+
+            'data' => $conversation
+
+        ]);
+    }
 }

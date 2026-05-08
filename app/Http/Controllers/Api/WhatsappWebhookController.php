@@ -238,13 +238,25 @@ class WhatsappWebhookController extends Controller
         // MESSAGE STATUS
         // ==========================================
 
-        if (isset($value['statuses'])) {
+       if (isset($value['statuses'])) {
 
             foreach ($value['statuses'] as $status) {
 
-                \Log::info('Message Status', $status);
+                Message::where(
+
+                    'message_id',
+
+                    $status['id']
+
+                )->update([
+
+                    'status' => $status['status']
+
+                ]);
+
             }
-        }
+
+}
 
 
 

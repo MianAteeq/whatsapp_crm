@@ -80,6 +80,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
 );
 
+Route::post(
+
+        'conversations/{id}/mark-read',
+
+        [ConversationController::class, 'markRead']
+
+    );
+
 
 });
 
