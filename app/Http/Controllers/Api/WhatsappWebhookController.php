@@ -9,6 +9,8 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\WhatsappSetting;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 
 class WhatsappWebhookController extends Controller
 {
@@ -231,10 +233,14 @@ class WhatsappWebhookController extends Controller
 
 
                 // ======================================
-                // GET MEDIA URL FROM META
+                // DOWNLOAD MEDIA FROM META
                 // ======================================
 
                 if ($mediaId) {
+
+                    // ======================================
+                    // GET MEDIA INFO
+                    // ======================================
 
                     $mediaResponse = Http::withToken(
 
@@ -252,7 +258,97 @@ class WhatsappWebhookController extends Controller
 
 
 
-                    $mediaUrl = $mediaResponse['url'] ?? null;
+                    // ======================================
+                    // TEMP MEDIA URL
+                    // ======================================
+
+                    $tempMediaUrl = $mediaResponse['url'] ?? null;
+
+
+
+                    // ======================================
+                    // DOWNLOAD FILE
+                    // ======================================
+
+                    if ($tempMediaUrl) {
+
+                        $mediaContent = Http::withToken(
+
+                            $setting->access_token
+
+                        )
+
+                            ->get($tempMediaUrl)
+
+                            ->body();
+
+
+
+                        // ======================================
+                        // FILE EXTENSION
+                        // ======================================
+
+                        $extension = match ($mimeType) {
+
+                            'image/jpeg' => 'jpg',
+
+                            'image/png' => 'png',
+
+                            'video/mp4' => 'mp4',
+
+                            'audio/ogg' => 'ogg',
+
+                            'application/pdf' => 'pdf',
+
+                            default => 'bin'
+                        };
+
+
+
+                        // ======================================
+                        // FILE NAME
+                        // ======================================
+
+                        $storedFileName =
+
+                            'whatsapp-media/' .
+
+                            time() .
+
+                            '_' .
+
+                            uniqid() .
+
+                            '.' .
+
+                            $extension;
+
+
+
+                        // ======================================
+                        // STORE FILE
+                        // ======================================
+
+                        Storage::disk('public')->put(
+
+                            $storedFileName,
+
+                            $mediaContent
+
+                        );
+
+
+
+                        // ======================================
+                        // PERMANENT URL
+                        // ======================================
+
+                        $mediaUrl = asset(
+
+                            'storage/' . $storedFileName
+
+                        );
+                    }
                 }
 
 
