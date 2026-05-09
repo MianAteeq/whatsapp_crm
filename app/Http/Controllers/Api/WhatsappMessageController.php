@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
@@ -9,428 +11,277 @@ use App\Models\WhatsappSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 
+/**
+ * WhatsApp Message Controller
+ * 
+ * Handles sending text messages, media, and templates via WhatsApp API.
+ * All operations are integrated with Meta's Graph API and stored in the local database.
+ */
 class WhatsappMessageController extends Controller
 {
-
-
+    /**
+     * Send a text message via WhatsApp
+     * 
+     * Validates the conversation and message, sends it to Meta's WhatsApp API,
+     * stores the message record, and updates the conversation's last message.
+     * 
+     * @param Request $request Contains conversation_id and message
+     * @return \Illuminate\Http\JsonResponse Success response with Meta's message ID
+     */
     public function send(Request $request)
     {
-
+        // Validate input
         $request->validate([
-
             'conversation_id' => 'required',
-
-            'message' => 'required|string'
-
+            'message' => 'required|string',
         ]);
 
-
-
-
-        // ==========================================
-        // FIND CONVERSATION
-        // ==========================================
-
+        // Retrieve conversation for authenticated tenant
         $conversation = Conversation::where(
-
             'tenant_id',
             auth()->user()->tenant_id
+        )->findOrFail($request->conversation_id);
 
-        )->findOrFail(
-            $request->conversation_id
-        );
-
-
-
-
-        // ==========================================
-        // CONTACT
-        // ==========================================
-
+        // Get contact from conversation
         $contact = $conversation->contact;
 
-
-
-
-        // ==========================================
-        // WHATSAPP SETTINGS
-        // ==========================================
-
+        // Retrieve WhatsApp settings for authenticated tenant
         $setting = WhatsappSetting::where(
-
             'tenant_id',
             auth()->user()->tenant_id
-
         )->first();
 
-
-
-
-        // ==========================================
-        // SEND TO META
-        // ==========================================
-
-        $response = Http::withToken(
-
-            $setting->access_token
-
-        )
-
+        // Send text message to Meta Graph API
+        $response = Http::withToken($setting->access_token)
             ->post(
-
                 "https://graph.facebook.com/v19.0/{$setting->phone_number_id}/messages",
-
                 [
-
                     'messaging_product' => 'whatsapp',
-
                     'to' => $contact->phone,
-
                     'type' => 'text',
-
                     'text' => [
-
-                        'body' => $request->message
-
-                    ]
-
+                        'body' => $request->message,
+                    ],
                 ]
-
             )
-
             ->json();
 
-
-
-
-        // ==========================================
-        // STORE MESSAGE
-        // ==========================================
-
+        // Store message record in database
         Message::create([
-
             'tenant_id' => auth()->user()->tenant_id,
-
             'conversation_id' => $conversation->id,
-
             'message_id' => $response['messages'][0]['id'] ?? null,
-
             'direction' => 'outgoing',
-
             'message' => $request->message,
-
             'type' => 'text',
-
             'status' => 'sent',
-
-            'payload' => $response
-
+            'payload' => $response,
         ]);
 
-
-
-
-        // ==========================================
-        // UPDATE CONVERSATION
-        // ==========================================
-
+        // Update conversation with latest message info
         $conversation->update([
-
             'last_message' => $request->message,
-
-            'last_message_at' => now()
-
+            'last_message_at' => now(),
         ]);
-
-
-
 
         return response()->json([
-
             'success' => true,
-
-            'response' => $response
-
+            'response' => $response,
         ]);
-    }
 
+    /**
+     * Send a media message via WhatsApp
+     * 
+     * Handles file uploads, detects media type (image, video, audio, document),
+     * uploads to Meta, and sends as a media message. Stores the file locally and in database.
+     * 
+     * @param Request $request Contains conversation_id and file
+     * @return \Illuminate\Http\JsonResponse Success/failure response
+     */
     public function sendMedia(Request $request)
     {
-
+        // Validate input
         $request->validate([
-
             'conversation_id' => 'required',
-
-            'file' => 'required|file|max:20480'
-
+            'file' => 'required|file|max:20480',
         ]);
 
-
-
-        // ==========================================
-        // FIND CONVERSATION
-        // ==========================================
-
+        // Retrieve conversation for authenticated tenant
         $conversation = Conversation::where(
-
             'tenant_id',
             auth()->user()->tenant_id
+        )->findOrFail($request->conversation_id);
 
-        )->findOrFail(
-            $request->conversation_id
-        );
-
-
-
-        // ==========================================
-        // CONTACT
-        // ==========================================
-
+        // Get contact from conversation
         $contact = $conversation->contact;
 
-
-
-        // ==========================================
-        // WHATSAPP SETTINGS
-        // ==========================================
-
+        // Retrieve WhatsApp settings for authenticated tenant
         $setting = WhatsappSetting::where(
-
             'tenant_id',
             auth()->user()->tenant_id
-
         )->first();
 
-
-
-        // ==========================================
-        // FILE
-        // ==========================================
-
+        // Get uploaded file
         $file = $request->file('file');
 
+        // Store file locally in public storage
+        $path = $file->store('whatsapp-media', 'public');
+        $fileUrl = asset('storage/' . $path);
 
-
-        // ==========================================
-        // STORE FILE
-        // ==========================================
-
-        $path = $file->store(
-
-            'whatsapp-media',
-
-            'public'
-
-        );
-
-
-
-        $fileUrl = asset(
-            'storage/' . $path
-        );
-
-
-
-        // ==========================================
-        // FILE DETAILS
-        // ==========================================
-
+        // Extract file details
         $mimeType = $file->getMimeType();
-
         $fileName = $file->getClientOriginalName();
 
-
-
-        // ==========================================
-        // DETECT TYPE
-        // ==========================================
-
+        // Detect media type from MIME type
         $type = 'document';
-
-
         if (str_contains($mimeType, 'image')) {
-
             $type = 'image';
         } elseif (str_contains($mimeType, 'video')) {
-
             $type = 'video';
         } elseif (str_contains($mimeType, 'audio')) {
-
             $type = 'audio';
         }
 
-
-
-        // ==========================================
-        // UPLOAD MEDIA TO META
-        // ==========================================
-
-        $uploadResponse = Http::withToken(
-
-            $setting->access_token
-
-        )
-
+        // Upload media file to Meta's WhatsApp API
+        $uploadResponse = Http::withToken($setting->access_token)
             ->attach(
-
                 'file',
-
                 file_get_contents($file->getRealPath()),
-
                 $fileName
-
             )
-
             ->post(
-
                 "https://graph.facebook.com/v19.0/{$setting->phone_number_id}/media",
-
                 [
-
-                    'messaging_product' => 'whatsapp'
-
+                    'messaging_product' => 'whatsapp',
                 ]
-
             )
-
             ->json();
 
-
-
-
-        // ==========================================
-        // CHECK UPLOAD ERROR
-        // ==========================================
-
+        // Check if media upload failed
         if (isset($uploadResponse['error'])) {
-
             return response()->json([
-
                 'success' => false,
-
                 'message' => 'Media upload failed',
-
-                'error' => $uploadResponse
-
+                'error' => $uploadResponse,
             ], 422);
         }
 
-
-
-
-        // ==========================================
-        // MEDIA ID
-        // ==========================================
-
+        // Extract media ID from upload response
         $mediaId = $uploadResponse['id'];
 
-
-
-
-        // ==========================================
-        // SEND MEDIA MESSAGE
-        // ==========================================
-
+        // Build payload for media message
         $payload = [
-
             'messaging_product' => 'whatsapp',
-
             'to' => $contact->phone,
-
             'type' => $type,
-
             $type => [
-
-                'id' => $mediaId
-
-            ]
-
+                'id' => $mediaId,
+            ],
         ];
 
-
-
-
-        $response = Http::withToken(
-
-            $setting->access_token
-
-        )
-
+        // Send media message to Meta's WhatsApp API
+        $response = Http::withToken($setting->access_token)
             ->post(
-
                 "https://graph.facebook.com/v19.0/{$setting->phone_number_id}/messages",
-
                 $payload
-
             )
-
             ->json();
 
-
-
-
-        // ==========================================
-        // STORE MESSAGE
-        // ==========================================
-
+        // Store message record in database
         Message::create([
-
             'tenant_id' => auth()->user()->tenant_id,
-
             'conversation_id' => $conversation->id,
-
             'message_id' => $response['messages'][0]['id'] ?? null,
-
             'direction' => 'outgoing',
-
             'message' => null,
-
             'type' => $type,
-
             'status' => 'sent',
-
             'media_url' => $fileUrl,
-
             'media_type' => $type,
-
             'mime_type' => $mimeType,
-
             'file_name' => $fileName,
-
-            'payload' => $response
-
+            'payload' => $response,
         ]);
 
-
-
-
-        // ==========================================
-        // UPDATE CONVERSATION
-        // ==========================================
-
+        // Update conversation with latest message info
         $conversation->update([
-
             'last_message' => '📎 Attachment',
-
-            'last_message_at' => now()
-
+            'last_message_at' => now(),
         ]);
-
-
-
-
-        // ==========================================
-        // RESPONSE
-        // ==========================================
 
         return response()->json([
-
             'success' => true,
-
             'message' => 'Media message sent successfully',
+            'response' => $response,
+        ]);
+    }
 
-            'response' => $response
+    /**
+     * Send a WhatsApp template message
+     * 
+     * Sends a pre-approved WhatsApp template message with specified language.
+     * Templates are managed in Meta's WhatsApp Business account.
+     * 
+     * @param Request $request Contains conversation_id, template_name, and language code
+     * @return \Illuminate\Http\JsonResponse Success response with Meta's message ID
+     */
+    public function sendTemplate(Request $request)
+    {
+        // Validate input
+        $request->validate([
+            'conversation_id' => 'required',
+            'template_name' => 'required',
+            'language' => 'required',
+        ]);
 
+        // Retrieve conversation for authenticated tenant
+        $conversation = Conversation::where(
+            'tenant_id',
+            auth()->user()->tenant_id
+        )->findOrFail($request->conversation_id);
+
+        // Get contact from conversation
+        $contact = $conversation->contact;
+
+        // Retrieve WhatsApp settings for authenticated tenant
+        $setting = WhatsappSetting::where(
+            'tenant_id',
+            auth()->user()->tenant_id
+        )->first();
+
+        // Send template message to Meta's WhatsApp API
+        $response = Http::withToken($setting->access_token)
+            ->post(
+                "https://graph.facebook.com/v19.0/{$setting->phone_number_id}/messages",
+                [
+                    'messaging_product' => 'whatsapp',
+                    'to' => $contact->phone,
+                    'type' => 'template',
+                    'template' => [
+                        'name' => $request->template_name,
+                        'language' => [
+                            'code' => $request->language,
+                        ],
+                    ],
+                ]
+            )
+            ->json();
+
+        // Store message record in database
+        Message::create([
+            'tenant_id' => auth()->user()->tenant_id,
+            'conversation_id' => $conversation->id,
+            'message_id' => $response['messages'][0]['id'] ?? null,
+            'direction' => 'outgoing',
+            'message' => '[Template] ' . $request->template_name,
+            'type' => 'template',
+            'status' => 'sent',
+            'payload' => $response,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'response' => $response,
         ]);
     }
 }
