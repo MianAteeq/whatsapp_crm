@@ -134,12 +134,134 @@ class WhatsappWebhookController extends Controller
             foreach ($value['messages'] as $incomingMessage) {
 
                 // ======================================
+                // MESSAGE TYPE
+                // ======================================
+
+                $messageType = $incomingMessage['type'] ?? 'text';
+
+
+
+                // ======================================
+                // DEFAULT VALUES
+                // ======================================
+
+                $messageText = null;
+
+                $mediaId = null;
+
+                $mimeType = null;
+
+                $fileName = null;
+
+                $mediaUrl = null;
+
+
+
+                // ======================================
+                // HANDLE TEXT
+                // ======================================
+
+                if ($messageType === 'text') {
+
+                    $messageText = $incomingMessage['text']['body'] ?? '';
+                }
+
+
+
+                // ======================================
+                // HANDLE IMAGE
+                // ======================================
+
+                elseif ($messageType === 'image') {
+
+                    $mediaId = $incomingMessage['image']['id'] ?? null;
+
+                    $mimeType = $incomingMessage['image']['mime_type'] ?? null;
+
+                    $messageText = '📷 Image';
+                }
+
+
+
+                // ======================================
+                // HANDLE DOCUMENT
+                // ======================================
+
+                elseif ($messageType === 'document') {
+
+                    $mediaId = $incomingMessage['document']['id'] ?? null;
+
+                    $mimeType = $incomingMessage['document']['mime_type'] ?? null;
+
+                    $fileName = $incomingMessage['document']['filename'] ?? null;
+
+                    $messageText = '📄 Document';
+                }
+
+
+
+                // ======================================
+                // HANDLE VIDEO
+                // ======================================
+
+                elseif ($messageType === 'video') {
+
+                    $mediaId = $incomingMessage['video']['id'] ?? null;
+
+                    $mimeType = $incomingMessage['video']['mime_type'] ?? null;
+
+                    $messageText = '🎥 Video';
+                }
+
+
+
+                // ======================================
+                // HANDLE AUDIO
+                // ======================================
+
+                elseif ($messageType === 'audio') {
+
+                    $mediaId = $incomingMessage['audio']['id'] ?? null;
+
+                    $mimeType = $incomingMessage['audio']['mime_type'] ?? null;
+
+                    $messageText = '🎵 Audio';
+                }
+
+
+
+                // ======================================
+                // GET MEDIA URL FROM META
+                // ======================================
+
+                if ($mediaId) {
+
+                    $mediaResponse = Http::withToken(
+
+                        $setting->access_token
+
+                    )
+
+                        ->get(
+
+                            "https://graph.facebook.com/v19.0/{$mediaId}"
+
+                        )
+
+                        ->json();
+
+
+
+                    $mediaUrl = $mediaResponse['url'] ?? null;
+                }
+
+
+
+                // ======================================
                 // CONTACT INFO
                 // ======================================
 
                 $waId = $incomingMessage['from'];
-
-                $messageText = $incomingMessage['text']['body'] ?? '';
 
 
 
@@ -207,9 +329,17 @@ class WhatsappWebhookController extends Controller
 
                     'message' => $messageText,
 
-                    'type' => $incomingMessage['type'] ?? 'text',
+                    'type' => $messageType,
 
                     'status' => 'received',
+
+                    'media_url' => $mediaUrl,
+
+                    'media_type' => $messageType,
+
+                    'mime_type' => $mimeType,
+
+                    'file_name' => $fileName,
 
                     'payload' => $incomingMessage
 
@@ -231,8 +361,16 @@ class WhatsappWebhookController extends Controller
 
                 ]);
 
+
+
+                // ======================================
+                // REALTIME BROADCAST
+                // ======================================
+
                 broadcast(
+
                     new MessageReceived($message)
+
                 )->toOthers();
             }
         }
