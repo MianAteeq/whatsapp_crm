@@ -6,48 +6,55 @@ use App\Models\Message;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 
-class MessageReceived implements ShouldBroadcast
+class MessageReceived implements ShouldBroadcastNow
 {
-
     use InteractsWithSockets, SerializesModels;
 
-    public $message;
+    public Message $message;
 
-    public $tenantId;
-
-
+    public int $tenantId;
 
     public function __construct(Message $message)
     {
-
         $this->message = $message;
-
         $this->tenantId = $message->tenant_id;
-
     }
 
-
-
-    public function broadcastOn()
+    /**
+     * Broadcast channel
+     */
+    public function broadcastOn(): array
     {
-
-        return new Channel(
-
-            'tenant.' . $this->tenantId
-
-        );
-
+        return [
+            new Channel(
+                'tenant.' . $this->tenantId
+            ),
+        ];
     }
 
-
-
-    public function broadcastAs()
+    /**
+     * Custom event name
+     */
+    public function broadcastAs(): string
     {
-
         return 'message.received';
-
     }
 
+    /**
+     * Broadcast payload
+     */
+    public function broadcastWith(): array
+    {
+        return [
+            'message' => [
+                'id' => $this->message->id,
+                'message' => $this->message->message,
+                'tenant_id' => $this->message->tenant_id,
+                'sender_id' => $this->message->sender_id,
+                'created_at' => $this->message->created_at,
+            ],
+        ];
+    }
 }
