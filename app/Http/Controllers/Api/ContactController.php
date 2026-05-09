@@ -236,9 +236,8 @@ class ContactController extends Controller
         ]);
     }
 
-   public function advanceSearch(Request $request)
+    public function advanceSearch(Request $request)
 {
-
     $request->validate([
 
         'search' => 'nullable|string',
@@ -247,7 +246,7 @@ class ContactController extends Controller
 
         'tags' => 'nullable|array',
 
-        'last_touchpoint' => 'nullable|string'
+        'last_touchpoint' => 'nullable|in:today,24_hours,7_days,30_days,90_days'
 
     ]);
 
@@ -261,7 +260,6 @@ class ContactController extends Controller
 
 
 
-
     // ==========================================
     // SEARCH
     // ==========================================
@@ -271,10 +269,6 @@ class ContactController extends Controller
         $search = $request->search;
 
         $contacts->where(function ($query) use ($search) {
-
-            // ==================================
-            // CONTACT FIELD SEARCH
-            // ==================================
 
             $query->where(
                     'name',
@@ -298,27 +292,21 @@ class ContactController extends Controller
                     'company',
                     'like',
                     '%' . $search . '%'
-                );
+                )
 
+                ->orWhereHas('tags', function ($tagQuery) use ($search) {
 
-            // ==================================
-            // TAG SEARCH
-            // ==================================
+                    $tagQuery->where(
+                        'name',
+                        'like',
+                        '%' . $search . '%'
+                    );
 
-            $query->orWhereHas('tags', function ($tagQuery) use ($search) {
-
-                $tagQuery->where(
-                    'name',
-                    'like',
-                    '%' . $search . '%'
-                );
-
-            });
+                });
 
         });
 
     }
-
 
 
 
@@ -337,24 +325,25 @@ class ContactController extends Controller
 
 
 
-
     // ==========================================
     // TAG FILTER
+    // MATCH ALL SELECTED TAGS
     // ==========================================
 
     if ($request->filled('tags')) {
 
-        $contacts->whereHas('tags', function ($query) use ($request) {
+        $tagIds = $request->tags;
+
+        $contacts->whereHas('tags', function ($query) use ($tagIds) {
 
             $query->whereIn(
                 'tags.id',
-                $request->tags
+                $tagIds
             );
 
-        });
+        }, '=', count($tagIds));
 
     }
-
 
 
 
@@ -371,6 +360,18 @@ class ContactController extends Controller
                 $contacts->whereDate(
                     'updated_at',
                     today()
+                );
+
+                break;
+
+
+
+            case '24_hours':
+
+                $contacts->where(
+                    'updated_at',
+                    '>=',
+                    now()->subHours(24)
                 );
 
                 break;
@@ -417,10 +418,8 @@ class ContactController extends Controller
 
 
 
-
     // ==========================================
-    // REMOVE DUPLICATES
-    // IMPORTANT FOR TAG RELATIONS
+    // FETCH CONTACTS
     // ==========================================
 
     $contacts = $contacts
