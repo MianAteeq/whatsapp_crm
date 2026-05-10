@@ -483,7 +483,7 @@ class WhatsappTemplateController extends Controller
 
             ->post(
 
-                "https://graph.facebook.com/v19.0/{$setting->meta_app_id}/uploads",
+                "https://graph.facebook.com/v19.0/{$setting->phone_number_id}/uploads",
 
                 [
 
