@@ -443,65 +443,30 @@ class WhatsappTemplateController extends Controller
 
     public function uploadMedia(Request $request)
     {
-
         $request->validate([
-
-            'file' => 'required|file',
-
-            'file_name' => 'required',
-
-            'file_type' => 'required',
-
-            'file_length' => 'required'
-
+            'file_name'   => 'required',
+            'file_type'   => 'required',
+            'file_length' => 'required',
         ]);
 
-
-
         $setting = WhatsappSetting::where(
-
             'tenant_id',
             auth()->user()->tenant_id
-
         )->first();
 
-
-
-        $file = $request->file('file');
-
-
-
-        // ======================================
-        // CREATE UPLOAD SESSION
-        // ======================================
-
-        $sessionResponse = Http::withToken(
-
-            $setting->access_token
-
-        )
-
+        $response = Http::withToken($setting->access_token)
             ->post(
-
-                "https://graph.facebook.com/v19.0/{$setting->phone_number_id}/uploads",
-
+                "https://graph.facebook.com/v25.0/{$setting->meta_app_id}/uploads",
+                [],
                 [
-
-                    'file_name' => $request->file_name,
-
-                    'file_length' => $request->file_length,
-
-                    'file_type' => $request->file_type
-
+                    'query' => [
+                        'file_name'   => $request->file_name,
+                        'file_length' => $request->file_length,
+                        'file_type'   => $request->file_type,
+                    ]
                 ]
+            );
 
-            )
-
-            ->json();
-
-
-
-
-        return response()->json($sessionResponse);
+        return response()->json($response->json());
     }
 }
