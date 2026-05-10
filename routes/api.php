@@ -122,20 +122,28 @@ Route::middleware('auth:sanctum')->group(function () {
      * Retrieve all WhatsApp templates
      */
     Route::get('whatsapp/templates', [WhatsappTemplateController::class, 'index']);
-    
+
     /**
      * Send a message using a WhatsApp template
      */
 
-    Route::post('messages/send-template',[WhatsappMessageController::class, 'sendTemplate']);
+    Route::post('messages/send-template', [WhatsappMessageController::class, 'sendTemplate']);
 
     Route::post(
 
-    'whatsapp/templates/create',
+        'whatsapp/templates/create',
 
-    [WhatsappTemplateController::class, 'store']
+        [WhatsappTemplateController::class, 'store']
 
-);
+    );
+
+    Route::post(
+
+        'whatsapp/templates/upload-media',
+
+        [WhatsappTemplateController::class, 'uploadMedia']
+
+    );
 });
 
 // ============================================

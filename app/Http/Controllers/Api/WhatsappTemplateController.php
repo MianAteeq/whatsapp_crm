@@ -157,23 +157,104 @@ class WhatsappTemplateController extends Controller
         // HEADER
         // ======================================
 
+        // ======================================
+        // HEADER
+        // ======================================
+
         if ($request->header) {
+
+            $headerType = strtoupper(
+                $request->header['type']
+            );
+
+
 
             $header = [
 
                 'type' => 'HEADER',
 
-                'format' => strtoupper(
-                    $request->header['type']
-                )
+                'format' => $headerType
 
             ];
 
 
 
-            if ($request->header['type'] === 'TEXT') {
+            // ======================================
+            // TEXT HEADER
+            // ======================================
+
+            if ($headerType === 'TEXT') {
 
                 $header['text'] = $request->header['text'];
+
+
+
+                // HEADER VARIABLES EXAMPLE
+                if (isset($request->header['examples'])) {
+
+                    $header['example'] = [
+
+                        'header_text' => $request->header['examples']
+
+                    ];
+                }
+            }
+
+
+
+            // ======================================
+            // IMAGE HEADER
+            // ======================================
+
+            elseif ($headerType === 'IMAGE') {
+
+                $header['example'] = [
+
+                    'header_handle' => [
+
+                        $request->header['media_handle']
+
+                    ]
+
+                ];
+            }
+
+
+
+            // ======================================
+            // VIDEO HEADER
+            // ======================================
+
+            elseif ($headerType === 'VIDEO') {
+
+                $header['example'] = [
+
+                    'header_handle' => [
+
+                        $request->header['media_handle']
+
+                    ]
+
+                ];
+            }
+
+
+
+            // ======================================
+            // DOCUMENT HEADER
+            // ======================================
+
+            elseif ($headerType === 'DOCUMENT') {
+
+                $header['example'] = [
+
+                    'header_handle' => [
+
+                        $request->header['media_handle']
+
+                    ]
+
+                ];
             }
 
 
@@ -358,5 +439,63 @@ class WhatsappTemplateController extends Controller
             'response' => $response
 
         ]);
+    }
+
+    public function uploadMedia(Request $request)
+    {
+
+        $request->validate([
+
+            'file' => 'required|file|max:20480'
+
+        ]);
+
+
+
+        $setting = WhatsappSetting::where(
+
+            'tenant_id',
+            auth()->user()->tenant_id
+
+        )->first();
+
+
+
+
+        $file = $request->file('file');
+
+
+
+
+        $response = Http::withToken(
+
+            $setting->access_token
+
+        )
+
+            ->attach(
+
+                'file',
+
+                file_get_contents($file->getRealPath()),
+
+                $file->getClientOriginalName()
+
+            )
+
+            ->post(
+
+                "https://graph.facebook.com/v19.0/{$setting->app_id}/uploads",
+
+                []
+
+            )
+
+            ->json();
+
+
+
+
+        return response()->json($response);
     }
 }
