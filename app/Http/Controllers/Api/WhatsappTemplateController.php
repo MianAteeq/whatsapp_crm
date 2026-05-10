@@ -446,7 +446,13 @@ class WhatsappTemplateController extends Controller
 
         $request->validate([
 
-            'file' => 'required|file|max:20480'
+            'file' => 'required|file',
+
+            'file_name' => 'required',
+
+            'file_type' => 'required',
+
+            'file_length' => 'required'
 
         ]);
 
@@ -461,41 +467,41 @@ class WhatsappTemplateController extends Controller
 
 
 
-
         $file = $request->file('file');
 
 
 
+        // ======================================
+        // CREATE UPLOAD SESSION
+        // ======================================
 
-        $response = Http::withToken(
+        $sessionResponse = Http::withToken(
 
-        $setting->access_token
+            $setting->access_token
 
-    )
+        )
 
-    ->post(
+            ->post(
 
-        "https://graph.facebook.com/v19.0/{$setting->meta_app_id}/uploads",
+                "https://graph.facebook.com/v19.0/{$setting->meta_app_id}/uploads",
 
-        [
+                [
 
-            'file_length' => filesize(
-                $file->getRealPath()
-            ),
+                    'file_name' => $request->file_name,
 
-            'file_type' => $file->getMimeType(),
+                    'file_length' => $request->file_length,
 
-            'file_name' => $file->getClientOriginalName()
+                    'file_type' => $request->file_type
 
-        ]
+                ]
 
-    )
+            )
 
-    ->json();
+            ->json();
 
 
 
 
-        return response()->json($response);
+        return response()->json($sessionResponse);
     }
 }
