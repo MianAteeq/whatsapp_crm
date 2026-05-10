@@ -127,7 +127,13 @@ Route::middleware('auth:sanctum')->group(function () {
      * Send a message using a WhatsApp template
      */
 
-    Route::post('messages/send-template',[WhatsappMessageController::class, 'sendTemplate']
+    Route::post('messages/send-template',[WhatsappMessageController::class, 'sendTemplate']);
+
+    Route::post(
+
+    'whatsapp/templates/create',
+
+    [WhatsappTemplateController::class, 'store']
 
 );
 });
