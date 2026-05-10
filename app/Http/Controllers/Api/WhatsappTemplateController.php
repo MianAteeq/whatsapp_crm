@@ -469,29 +469,29 @@ class WhatsappTemplateController extends Controller
 
         $response = Http::withToken(
 
-            $setting->access_token
+        $setting->access_token
 
-        )
+    )
 
-            ->attach(
+    ->post(
 
-                'file',
+        "https://graph.facebook.com/v19.0/{$setting->meta_app_id}/uploads",
 
-                file_get_contents($file->getRealPath()),
+        [
 
-                $file->getClientOriginalName()
+            'file_length' => filesize(
+                $file->getRealPath()
+            ),
 
-            )
+            'file_type' => $file->getMimeType(),
 
-            ->post(
+            'file_name' => $file->getClientOriginalName()
 
-                "https://graph.facebook.com/v19.0/{$setting->app_id}/uploads",
+        ]
 
-                []
+    )
 
-            )
-
-            ->json();
+    ->json();
 
 
 
