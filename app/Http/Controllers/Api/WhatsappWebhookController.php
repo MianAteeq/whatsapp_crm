@@ -18,37 +18,27 @@ class WhatsappWebhookController extends Controller
     // VERIFY WEBHOOK
     // ==========================================
 
-    public function verify(Request $request)
-    {
+public function verify(Request $request)
+{
+    $verify_token = env('WHATSAPP_WEBHOOK_VERIFY_TOKEN');
 
-        $verify_token = env('WHATSAPP_WEBHOOK_VERIFY_TOKEN');
+    $mode = $request->query('hub.mode');
+    $token = $request->query('hub.verify_token');
+    $challenge = $request->query('hub.challenge');
 
-
-        if (
-
-            $request->hub_mode == 'subscribe'
-
-            &&
-
-            $request->hub_verify_token == $verify_token
-
-        ) {
-
-            return response(
-                $request->hub_challenge,
-                200
-            );
-        }
-
-
-        return response()->json([
-
-            'success' => false,
-
-            'message' => 'Invalid verification token'
-
-        ], 403);
+    if (
+        $mode === 'subscribe' &&
+        $token === $verify_token
+    ) {
+        return response($challenge, 200)
+            ->header('Content-Type', 'text/plain');
     }
+
+    return response()->json([
+        'success' => false,
+        'message' => 'Invalid verification token'
+    ], 403);
+}
 
 
 
