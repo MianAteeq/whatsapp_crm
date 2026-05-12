@@ -20,7 +20,7 @@ class WhatsappWebhookController extends Controller
 
 public function verify(Request $request)
 {
-   return $verify_token = env('WHATSAPP_WEBHOOK_VERIFY_TOKEN');
+    $verify_token = env('WHATSAPP_WEBHOOK_VERIFY_TOKEN');
 
     $mode = $request->query('hub_mode');
     $token = $request->query('hub_verify_token');
