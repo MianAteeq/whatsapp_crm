@@ -89,6 +89,8 @@ class WhatsappMessageController extends Controller
             'response' => $response,
         ]);
 
+    }
+
     /**
      * Send a media message via WhatsApp
      * 
