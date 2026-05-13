@@ -198,39 +198,83 @@ if (
 |--------------------------------------------------------------------------
 */
 
-if ($request->filled('header')) {
 
-    $headerType = strtoupper($request->header['type']);
+/*
+|--------------------------------------------------------------------------
+| HEADER
+|--------------------------------------------------------------------------
+*/
 
-    $header = [
-        'type'   => 'HEADER',
-        'format' => $headerType
-    ];
+if (
+    isset($request->components) &&
+    is_array($request->components)
+) {
 
-    // TEXT HEADER
-    if ($headerType === 'TEXT') {
+    foreach ($request->components as $component) {
 
-        $header['text'] = $request->header['text'];
+        if (
+            isset($component['type']) &&
+            strtoupper($component['type']) === 'HEADER'
+        ) {
 
-        if (!empty($request->header['examples'])) {
+            $headerType = strtoupper($component['format']);
 
-            $header['example'] = [
-                'header_text' => $request->header['examples']
+            $header = [
+                'type'   => 'HEADER',
+                'format' => $headerType
             ];
+
+            /*
+            |--------------------------------------------------------------------------
+            | TEXT HEADER
+            |--------------------------------------------------------------------------
+            */
+
+            if ($headerType === 'TEXT') {
+
+                $header['text'] = $component['text'];
+
+                if (
+                    !empty($component['example']['header_text'])
+                ) {
+
+                    $header['example'] = [
+                        'header_text' =>
+                            $component['example']['header_text']
+                    ];
+                }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | MEDIA HEADER
+            |--------------------------------------------------------------------------
+            */
+
+            elseif (
+                in_array(
+                    $headerType,
+                    ['IMAGE', 'VIDEO', 'DOCUMENT']
+                )
+            ) {
+
+                if (
+                    !empty(
+                        $component['example']['header_handle'][0]
+                    )
+                ) {
+
+                    $header['example'] = [
+                        'header_handle' => [
+                            $component['example']['header_handle'][0]
+                        ]
+                    ];
+                }
+            }
+
+            $components[] = $header;
         }
     }
-
-    // MEDIA HEADER
-    elseif (in_array($headerType, ['IMAGE', 'VIDEO', 'DOCUMENT'])) {
-
-        $header['example'] = [
-            'header_handle' => [
-                $request->header['header_handle']
-            ]
-        ];
-    }
-
-    $components[] = $header;
 }
 
 /*
