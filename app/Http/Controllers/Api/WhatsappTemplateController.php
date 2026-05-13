@@ -152,128 +152,225 @@ public function store(Request $request)
     // COMPONENTS
     // ======================================
 
-    $components = [];
+    ```php id="81k0t4"
+$components = [];
 
-    // ======================================
-    // HEADER
-    // ======================================
+/*
+|--------------------------------------------------------------------------
+| USE FRONTEND COMPONENT EXAMPLES IF AVAILABLE
+|--------------------------------------------------------------------------
+*/
 
-    if ($request->filled('header')) {
+$frontendBodyExample = null;
 
-        $headerType = strtoupper($request->header['type']);
+if (
+    isset($request->components) &&
+    is_array($request->components)
+) {
 
-        $header = [
-            'type'   => 'HEADER',
-            'format' => $headerType
-        ];
+    foreach ($request->components as $component) {
 
-        // TEXT HEADER
-        if ($headerType === 'TEXT') {
+        if (
+            isset($component['type']) &&
+            strtoupper($component['type']) === 'BODY'
+        ) {
 
-            $header['text'] = $request->header['text'];
+            // BODY TEXT
+            if (!empty($component['text'])) {
+                $request['body'] = $component['text'];
+            }
 
-            if (!empty($request->header['examples'])) {
+            // BODY EXAMPLE
+            if (
+                isset($component['example']['body_text'])
+            ) {
 
-                $header['example'] = [
-                    'header_text' => $request->header['examples']
-                ];
+                $frontendBodyExample =
+                    $component['example']['body_text'];
             }
         }
-
-        // MEDIA HEADER
-        elseif (in_array($headerType, ['IMAGE', 'VIDEO', 'DOCUMENT'])) {
-
-            $header['example'] = [
-                'header_handle' => [
-                    $request->header['media_handle']
-                ]
-            ];
-        }
-
-        $components[] = $header;
     }
+}
 
-    // ======================================
-    // BODY
-    // ======================================
+/*
+|--------------------------------------------------------------------------
+| HEADER
+|--------------------------------------------------------------------------
+*/
 
-    $body = [
-        'type' => 'BODY',
-        'text' => $request->body
+if ($request->filled('header')) {
+
+    $headerType = strtoupper($request->header['type']);
+
+    $header = [
+        'type'   => 'HEADER',
+        'format' => $headerType
     ];
 
-    // BODY VARIABLES EXAMPLE
-    if ($request->filled('samples.body_text')) {
+    // TEXT HEADER
+    if ($headerType === 'TEXT') {
 
-        $body['example'] = [
-            'body_text' => $request->samples['body_text']
-        ];
-    }
+        $header['text'] = $request->header['text'];
 
-    $components[] = $body;
+        if (!empty($request->header['examples'])) {
 
-    // ======================================
-    // FOOTER
-    // ======================================
-
-    if ($request->filled('footer')) {
-
-        $components[] = [
-            'type' => 'FOOTER',
-            'text' => $request->footer
-        ];
-    }
-
-    // ======================================
-    // BUTTONS
-    // ======================================
-
-    if ($request->filled('buttons')) {
-
-        $buttons = [];
-
-        foreach ($request->buttons as $button) {
-
-            // URL BUTTON
-            if ($button['type'] === 'URL') {
-
-                $buttons[] = [
-                    'type' => 'URL',
-                    'text' => $button['text'],
-                    'url'  => $button['url']
-                ];
-            }
-
-            // PHONE BUTTON
-            elseif ($button['type'] === 'PHONE_NUMBER') {
-
-                $buttons[] = [
-                    'type'         => 'PHONE_NUMBER',
-                    'text'         => $button['text'],
-                    'phone_number' => $button['phone_number']
-                ];
-            }
-        }
-
-        if (!empty($buttons)) {
-
-            $components[] = [
-                'type'    => 'BUTTONS',
-                'buttons' => $buttons
+            $header['example'] = [
+                'header_text' => $request->header['examples']
             ];
         }
     }
 
-    // ======================================
-    // TEMPLATE NAME
-    // ======================================
+    // MEDIA HEADER
+    elseif (in_array($headerType, ['IMAGE', 'VIDEO', 'DOCUMENT'])) {
 
-    $templateName = $request->name;
+        $header['example'] = [
+            'header_handle' => [
+                $request->header['media_handle']
+            ]
+        ];
+    }
 
-    // ======================================
-    // FINAL PAYLOAD
-    // ======================================
+    $components[] = $header;
+}
 
+/*
+|--------------------------------------------------------------------------
+| BODY
+|--------------------------------------------------------------------------
+*/
+
+$body = [
+    'type' => 'BODY',
+    'text' => $request->body
+];
+
+/*
+|--------------------------------------------------------------------------
+| BODY EXAMPLES
+|--------------------------------------------------------------------------
+|
+| Priority:
+| 1. components[].example.body_text
+| 2. samples.body_text
+|
+*/
+
+if ($frontendBodyExample) {
+
+    $body['example'] = [
+        'body_text' => $frontendBodyExample
+    ];
+}
+
+elseif ($request->filled('samples.body_text')) {
+
+    $bodyExamples = [];
+
+    foreach ($request->samples['body_text'] as $sample) {
+
+        if (is_array($sample)) {
+            $bodyExamples[] = $sample;
+        } else {
+            $bodyExamples[] = [(string) $sample];
+        }
+    }
+
+    $body['example'] = [
+        'body_text' => $bodyExamples
+    ];
+}
+
+$components[] = $body;
+
+/*
+|--------------------------------------------------------------------------
+| FOOTER
+|--------------------------------------------------------------------------
+*/
+
+if ($request->filled('footer')) {
+
+    $components[] = [
+        'type' => 'FOOTER',
+        'text' => $request->footer
+    ];
+}
+
+/*
+|--------------------------------------------------------------------------
+| BUTTONS
+|--------------------------------------------------------------------------
+*/
+
+if ($request->filled('buttons')) {
+
+    $buttons = [];
+
+    foreach ($request->buttons as $button) {
+
+        // URL BUTTON
+        if ($button['type'] === 'URL') {
+
+            $buttonData = [
+                'type' => 'URL',
+                'text' => $button['text'],
+                'url'  => $button['url']
+            ];
+
+            if (!empty($button['example'])) {
+
+                $buttonData['example'] = [
+                    $button['example']
+                ];
+            }
+
+            $buttons[] = $buttonData;
+        }
+
+        // PHONE BUTTON
+        elseif ($button['type'] === 'PHONE_NUMBER') {
+
+            $buttons[] = [
+                'type'         => 'PHONE_NUMBER',
+                'text'         => $button['text'],
+                'phone_number' => $button['phone_number']
+            ];
+        }
+
+        // QUICK REPLY
+        elseif ($button['type'] === 'QUICK_REPLY') {
+
+            $buttons[] = [
+                'type' => 'QUICK_REPLY',
+                'text' => $button['text']
+            ];
+        }
+    }
+
+    if (!empty($buttons)) {
+
+        $components[] = [
+            'type'    => 'BUTTONS',
+            'buttons' => $buttons
+        ];
+    }
+}
+
+/*
+|--------------------------------------------------------------------------
+| FINAL PAYLOAD
+|--------------------------------------------------------------------------
+*/
+
+$payload = [
+    'name'       => strtolower($request->name),
+    'category'   => strtoupper($request->category),
+    'language'   => $request->language ?? 'en_US',
+    'components' => $components
+];
+
+
+   
     return $components;
 
     $payload = [
