@@ -7,6 +7,7 @@ use App\Models\WhatsappSetting;
 use App\Models\WhatsappTemplate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 class WhatsappTemplateController extends Controller
 {
@@ -115,331 +116,234 @@ class WhatsappTemplateController extends Controller
         ]);
     }
 
-    public function store(Request $request)
-    {
 
-        $request->validate([
 
-            'name' => 'required',
+public function store(Request $request)
+{
+    // ======================================
+    // VALIDATION
+    // ======================================
 
-            'category' => 'required',
+    $request->validate([
+        'name' => 'required|string',
+        'category' => 'required|string',
+        'language' => 'required|string',
+        'body' => 'required|string',
+    ]);
 
-            'language' => 'required',
+    // ======================================
+    // SETTINGS
+    // ======================================
 
-            'body' => 'required'
+    $setting = WhatsappSetting::where(
+        'tenant_id',
+        auth()->user()->tenant_id
+    )->first();
 
-        ]);
+    if (!$setting) {
+        return response()->json([
+            'success' => false,
+            'message' => 'WhatsApp settings not found'
+        ], 404);
+    }
 
+    // ======================================
+    // COMPONENTS
+    // ======================================
 
+    $components = [];
 
-        // ======================================
-        // SETTINGS
-        // ======================================
+    // ======================================
+    // HEADER
+    // ======================================
 
-        $setting = WhatsappSetting::where(
+    if ($request->filled('header')) {
 
-            'tenant_id',
-            auth()->user()->tenant_id
+        $headerType = strtoupper($request->header['type']);
 
-        )->first();
-
-
-
-        // ======================================
-        // COMPONENTS
-        // ======================================
-
-        $components = [];
-
-
-
-        // ======================================
-        // HEADER
-        // ======================================
-
-        // ======================================
-        // HEADER
-        // ======================================
-
-        if ($request->header) {
-
-            $headerType = strtoupper(
-                $request->header['type']
-            );
-
-
-
-            $header = [
-
-                'type' => 'HEADER',
-
-                'format' => $headerType
-
-            ];
-
-
-
-            // ======================================
-            // TEXT HEADER
-            // ======================================
-
-            if ($headerType === 'TEXT') {
-
-                $header['text'] = $request->header['text'];
-
-
-
-                // HEADER VARIABLES EXAMPLE
-                if (isset($request->header['examples'])) {
-
-                    $header['example'] = [
-
-                        'header_text' => $request->header['examples']
-
-                    ];
-                }
-            }
-
-
-
-            // ======================================
-            // IMAGE HEADER
-            // ======================================
-
-            elseif ($headerType === 'IMAGE') {
-
-                $header['example'] = [
-
-                    'header_handle' => [
-
-                        $request->header['media_handle']
-
-                    ]
-
-                ];
-            }
-
-
-
-            // ======================================
-            // VIDEO HEADER
-            // ======================================
-
-            elseif ($headerType === 'VIDEO') {
-
-                $header['example'] = [
-
-                    'header_handle' => [
-
-                        $request->header['media_handle']
-
-                    ]
-
-                ];
-            }
-
-
-
-            // ======================================
-            // DOCUMENT HEADER
-            // ======================================
-
-            elseif ($headerType === 'DOCUMENT') {
-
-                $header['example'] = [
-
-                    'header_handle' => [
-
-                        $request->header['media_handle']
-
-                    ]
-
-                ];
-            }
-
-
-
-            $components[] = $header;
-        }
-
-
-
-        // ======================================
-        // BODY
-        // ======================================
-
-        $body = [
-
-            'type' => 'BODY',
-
-            'text' => $request->body
-
+        $header = [
+            'type'   => 'HEADER',
+            'format' => $headerType
         ];
 
+        // TEXT HEADER
+        if ($headerType === 'TEXT') {
 
+            $header['text'] = $request->header['text'];
 
-        // ======================================
-        // VARIABLE SAMPLES
-        // ======================================
+            if (!empty($request->header['examples'])) {
 
-        if ($request->samples) {
+                $header['example'] = [
+                    'header_text' => $request->header['examples']
+                ];
+            }
+        }
 
-            $body['example'] = [
+        // MEDIA HEADER
+        elseif (in_array($headerType, ['IMAGE', 'VIDEO', 'DOCUMENT'])) {
 
-                'body_text' => $request->samples['body_text']
-
+            $header['example'] = [
+                'header_handle' => [
+                    $request->header['media_handle']
+                ]
             ];
         }
 
+        $components[] = $header;
+    }
 
+    // ======================================
+    // BODY
+    // ======================================
 
-        $components[] = $body;
+    $body = [
+        'type' => 'BODY',
+        'text' => $request->body
+    ];
 
+    // BODY VARIABLES EXAMPLE
+    if ($request->filled('samples.body_text')) {
 
+        $body['example'] = [
+            'body_text' => $request->samples['body_text']
+        ];
+    }
 
-        // ======================================
-        // FOOTER
-        // ======================================
+    $components[] = $body;
 
-        if ($request->footer) {
+    // ======================================
+    // FOOTER
+    // ======================================
 
-            $components[] = [
+    if ($request->filled('footer')) {
 
-                'type' => 'FOOTER',
+        $components[] = [
+            'type' => 'FOOTER',
+            'text' => $request->footer
+        ];
+    }
 
-                'text' => $request->footer
+    // ======================================
+    // BUTTONS
+    // ======================================
 
-            ];
-        }
+    if ($request->filled('buttons')) {
 
+        $buttons = [];
 
+        foreach ($request->buttons as $button) {
 
-        // ======================================
-        // BUTTONS
-        // ======================================
+            // URL BUTTON
+            if ($button['type'] === 'URL') {
 
-        if ($request->buttons) {
-
-            $buttons = [];
-
-
-
-            foreach ($request->buttons as $button) {
-
-                if ($button['type'] === 'URL') {
-
-                    $buttons[] = [
-
-                        'type' => 'URL',
-
-                        'text' => $button['text'],
-
-                        'url' => $button['url']
-
-                    ];
-                } elseif ($button['type'] === 'PHONE_NUMBER') {
-
-                    $buttons[] = [
-
-                        'type' => 'PHONE_NUMBER',
-
-                        'text' => $button['text'],
-
-                        'phone_number' => $button['phone_number']
-
-                    ];
-                }
+                $buttons[] = [
+                    'type' => 'URL',
+                    'text' => $button['text'],
+                    'url'  => $button['url']
+                ];
             }
 
+            // PHONE BUTTON
+            elseif ($button['type'] === 'PHONE_NUMBER') {
 
+                $buttons[] = [
+                    'type'         => 'PHONE_NUMBER',
+                    'text'         => $button['text'],
+                    'phone_number' => $button['phone_number']
+                ];
+            }
+        }
+
+        if (!empty($buttons)) {
 
             $components[] = [
-
-                'type' => 'BUTTONS',
-
+                'type'    => 'BUTTONS',
                 'buttons' => $buttons
-
             ];
         }
+    }
 
+    // ======================================
+    // TEMPLATE NAME
+    // ======================================
 
+    $templateName = Str::slug($request->name, '_') . '_' . time();
 
-        // ======================================
-        // FINAL PAYLOAD
-        // ======================================
+    // ======================================
+    // FINAL PAYLOAD
+    // ======================================
 
-        $payload = [
+    $payload = [
+        'name'       => $templateName,
+        'category'   => strtoupper($request->category),
+        'language'   => $request->language,
+        'components' => $components
+    ];
 
-            'name' => strtolower($request->name),
+    // ======================================
+    // LOG PAYLOAD
+    // ======================================
 
-            'category' => strtoupper($request->category),
+    Log::info('WhatsApp Template Payload', $payload);
 
-            'language' => $request->language,
+    // ======================================
+    // SEND TO META
+    // ======================================
 
-            'components' => $components
+    $response = Http::withToken(
+        $setting->access_token
+    )->post(
+        "https://graph.facebook.com/v19.0/{$setting->business_account_id}/message_templates",
+        $payload
+    );
 
-        ];
+    $responseData = $response->json();
 
+    // ======================================
+    // LOG RESPONSE
+    // ======================================
 
+    Log::info('WhatsApp Template Response', $responseData);
 
-        // ======================================
-        // SEND TO META
-        // ======================================
+    // ======================================
+    // HANDLE META ERRORS
+    // ======================================
 
-        $response = Http::withToken(
-
-            $setting->access_token
-
-        )
-
-            ->post(
-
-                "https://graph.facebook.com/v19.0/{$setting->business_account_id}/message_templates",
-
-                $payload
-
-            )
-
-            ->json();
-
-
-
-
-        // ======================================
-        // STORE TEMPLATE
-        // ======================================
-
-        $template = WhatsappTemplate::create([
-
-            'tenant_id' => auth()->user()->tenant_id,
-
-            'template_id' => $response['id'] ?? null,
-
-            'name' => $request->name,
-
-            'category' => $request->category,
-
-            'language' => $request->language,
-
-            'status' => 'PENDING',
-
-            'components' => $components
-
-        ]);
-
-
-
+    if (isset($responseData['error'])) {
 
         return response()->json([
-
-            'success' => true,
-
-            'data' => $template,
-
-            'response' => $response
-
-        ]);
+            'success' => false,
+            'message' => $responseData['error']['message'] ?? 'Meta API Error',
+            'error'   => $responseData['error'],
+            'payload' => $payload
+        ], 422);
     }
+
+    // ======================================
+    // STORE TEMPLATE
+    // ======================================
+
+    $template = WhatsappTemplate::create([
+        'tenant_id'  => auth()->user()->tenant_id,
+        'template_id'=> $responseData['id'] ?? null,
+        'name'       => $templateName,
+        'category'   => strtoupper($request->category),
+        'language'   => $request->language,
+        'status'     => 'PENDING',
+        'components' => $components
+    ]);
+
+    // ======================================
+    // SUCCESS RESPONSE
+    // ======================================
+
+    return response()->json([
+        'success' => true,
+        'message' => 'Template submitted successfully',
+        'data'    => $template,
+        'response'=> $responseData
+    ]);
+}
 
     public function uploadMedia(Request $request)
     {
