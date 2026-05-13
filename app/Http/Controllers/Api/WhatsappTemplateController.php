@@ -415,14 +415,7 @@ $payload = [
 
 
    
-    return $components;
-
-    $payload = [
-        'name'       => $templateName,
-        'category'   => strtoupper($request->category),
-        'language'   => $request->language,
-        'components' => $components
-    ];
+    
 
     // ======================================
     // LOG PAYLOAD
