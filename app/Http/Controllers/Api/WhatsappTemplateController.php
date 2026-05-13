@@ -482,32 +482,87 @@ $payload = [
     ]);
 }
 
-    public function uploadMedia(Request $request)
-    {
-        $request->validate([
-            'file_name'   => 'required',
-            'file_type'   => 'required',
-            'file_length' => 'required',
-        ]);
+public function uploadMedia(Request $request)
+{
+    $request->validate([
+        'file' => 'required|file'
+    ]);
 
-        $setting = WhatsappSetting::where(
-            'tenant_id',
-            auth()->user()->tenant_id
-        )->first();
+    $setting = WhatsappSetting::where(
+        'tenant_id',
+        auth()->user()->tenant_id
+    )->first();
 
-        $response = Http::withToken($setting->access_token)
-            ->post(
-                "https://graph.facebook.com/v25.0/1333790982005297/uploads",
-                [],
-                [
-                    'query' => [
-                        'file_name'   => $request->file_name,
-                        'file_length' => $request->file_length,
-                        'file_type'   => $request->file_type,
-                    ]
-                ]
-            );
+    $file = $request->file('file');
 
-        return response()->json($response->json());
+    /*
+    |--------------------------------------------------------------------------
+    | STEP 1 — CREATE UPLOAD SESSION
+    |--------------------------------------------------------------------------
+    */
+
+    $appId = '1333790982005297';
+
+    $sessionResponse = Http::withToken($setting->access_token)
+        ->post(
+            "https://graph.facebook.com/v25.0/{$appId}/uploads",
+            [
+                'file_name'   => $file->getClientOriginalName(),
+                'file_length' => $file->getSize(),
+                'file_type'   => $file->getMimeType(),
+            ]
+        );
+
+    if (!$sessionResponse->successful()) {
+
+        return response()->json([
+            'success' => false,
+            'step'    => 'create_upload_session',
+            'error'   => $sessionResponse->json()
+        ], 500);
     }
+
+    $uploadId = $sessionResponse->json()['id'];
+
+    /*
+    |--------------------------------------------------------------------------
+    | STEP 2 — UPLOAD FILE BINARY
+    |--------------------------------------------------------------------------
+    */
+
+    $binaryResponse = Http::withHeaders([
+            'Authorization' => 'OAuth ' . $setting->access_token,
+            'file_offset'   => '0',
+        ])
+        ->withBody(
+            file_get_contents($file->getRealPath()),
+            $file->getMimeType()
+        )
+        ->post(
+            "https://graph.facebook.com/v25.0/{$uploadId}"
+        );
+
+    if (!$binaryResponse->successful()) {
+
+        return response()->json([
+            'success' => false,
+            'step'    => 'upload_binary',
+            'error'   => $binaryResponse->json()
+        ], 500);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | FINAL HANDLE
+    |--------------------------------------------------------------------------
+    */
+
+    return response()->json([
+        'success'       => true,
+        'upload_id'     => $uploadId,
+        'header_handle' => $binaryResponse->json()['h'],
+        'response'      => $binaryResponse->json()
+    ]);
+}
+
 }
