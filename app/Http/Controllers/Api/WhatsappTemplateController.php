@@ -7,6 +7,7 @@ use App\Models\WhatsappSetting;
 use App\Models\WhatsappTemplate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class WhatsappTemplateController extends Controller
