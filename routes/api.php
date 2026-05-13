@@ -144,6 +144,10 @@ Route::middleware('auth:sanctum')->group(function () {
         [WhatsappTemplateController::class, 'uploadMedia']
 
     );
+
+    Route::put('/templates/{id}', [WhatsappTemplateController::class, 'update']);
+
+Route::delete('/templates/{id}', [WhatsappTemplateController::class, 'destroy']);
 });
 
 // ============================================
