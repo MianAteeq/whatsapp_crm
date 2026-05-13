@@ -274,7 +274,7 @@ public function store(Request $request)
     // FINAL PAYLOAD
     // ======================================
 
-    return $components;
+    return $request['components'];
 
     $payload = [
         'name'       => $templateName,
