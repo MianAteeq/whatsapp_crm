@@ -456,7 +456,7 @@ class WhatsappTemplateController extends Controller
 
         $response = Http::withToken($setting->access_token)
             ->post(
-                "https://graph.facebook.com/v25.0/25072021329136917/uploads",
+                "https://graph.facebook.com/v25.0/1333790982005297/uploads",
                 [],
                 [
                     'query' => [
