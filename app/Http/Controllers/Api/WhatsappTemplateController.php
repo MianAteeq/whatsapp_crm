@@ -268,7 +268,7 @@ public function store(Request $request)
     // TEMPLATE NAME
     // ======================================
 
-    $templateName = Str::slug($request->name, '_') . '_' . time();
+    $templateName = $request->name;
 
     // ======================================
     // FINAL PAYLOAD
