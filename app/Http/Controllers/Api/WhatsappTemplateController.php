@@ -225,7 +225,7 @@ if ($request->filled('header')) {
 
         $header['example'] = [
             'header_handle' => [
-                $request->header['media_handle']
+                $request->header['header_handle']
             ]
         ];
     }
