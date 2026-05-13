@@ -152,7 +152,7 @@ public function store(Request $request)
     // COMPONENTS
     // ======================================
 
-    ```php id="81k0t4"
+    
 $components = [];
 
 /*
