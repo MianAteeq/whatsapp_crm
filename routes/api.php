@@ -15,7 +15,7 @@ use App\Http\Controllers\Api\ConversationController;
 use App\Http\Controllers\Api\TagController;
 use App\Http\Controllers\Api\WhatsappMessageController;
 use App\Http\Controllers\Api\WhatsappSettingController;
-use App\Http\Controllers\Api\WhatsappTemplateController;
+use App\Http\Controllers\WhatsappTemplateController;
 use App\Http\Controllers\Api\WhatsappWebhookController;
 use Illuminate\Support\Facades\Route;
 
