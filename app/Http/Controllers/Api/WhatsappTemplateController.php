@@ -826,7 +826,7 @@ class WhatsappTemplateController extends Controller
         $tenantId = auth()->user()->tenant_id;
 
         // =====================================================
-        // TOTAL COUNTS
+        // TOTAL MESSAGE COUNTS
         // =====================================================
 
         $totalSent = WhatsappMessageLog::where(
@@ -856,7 +856,7 @@ class WhatsappTemplateController extends Controller
             ->count();
 
         // =====================================================
-        // RATES
+        // GLOBAL RATES
         // =====================================================
 
         $deliveryRate = $totalSent > 0
@@ -874,9 +874,33 @@ class WhatsappTemplateController extends Controller
         $templates = WhatsappMessageLog::select(
             'template_name',
             DB::raw('COUNT(*) as total_sent'),
-            DB::raw("SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) as total_delivered"),
-            DB::raw("SUM(CASE WHEN status = 'read' THEN 1 ELSE 0 END) as total_read"),
-            DB::raw("SUM(CASE WHEN status = 'replied' THEN 1 ELSE 0 END) as total_replied")
+            DB::raw("
+            SUM(
+                CASE
+                    WHEN status = 'delivered'
+                    THEN 1
+                    ELSE 0
+                END
+            ) as total_delivered
+        "),
+            DB::raw("
+            SUM(
+                CASE
+                    WHEN status = 'read'
+                    THEN 1
+                    ELSE 0
+                END
+            ) as total_read
+        "),
+            DB::raw("
+            SUM(
+                CASE
+                    WHEN status = 'replied'
+                    THEN 1
+                    ELSE 0
+                END
+            ) as total_replied
+        ")
         )
             ->where('tenant_id', $tenantId)
             ->groupBy('template_name')
@@ -889,12 +913,18 @@ class WhatsappTemplateController extends Controller
 
         $topTemplates = $templates->map(function ($item) {
 
-            $templateReadRate = $item->total_delivered > 0
-                ? round(($item->total_read / $item->total_delivered) * 100, 1)
+            $templateDeliveryRate = $item->total_sent > 0
+                ? round(
+                    ($item->total_delivered / $item->total_sent) * 100,
+                    1
+                )
                 : 0;
 
-            $templateDeliveryRate = $item->total_sent > 0
-                ? round(($item->total_delivered / $item->total_sent) * 100, 1)
+            $templateReadRate = $item->total_delivered > 0
+                ? round(
+                    ($item->total_read / $item->total_delivered) * 100,
+                    1
+                )
                 : 0;
 
             return [
@@ -915,35 +945,74 @@ class WhatsappTemplateController extends Controller
         // CATEGORY HEALTH
         // =====================================================
 
-        $approvedTemplates = WhatsappTemplate::where(
-            'tenant_id',
-            $tenantId
+        $categoryPerformance = WhatsappTemplate::select(
+            'category',
+            DB::raw('COUNT(*) as total_templates'),
+            DB::raw("
+            SUM(
+                CASE
+                    WHEN status = 'APPROVED'
+                    THEN 1
+                    ELSE 0
+                END
+            ) as approved_templates
+        ")
         )
-            ->where('status', 'APPROVED')
-            ->count();
+            ->where('tenant_id', $tenantId)
+            ->groupBy('category')
+            ->get()
+            ->map(function ($item) {
 
-        $pendingTemplates = WhatsappTemplate::where(
-            'tenant_id',
-            $tenantId
-        )
-            ->where('status', 'PENDING')
-            ->count();
+                $score = $item->total_templates > 0
+                    ? round(
+                        (
+                            $item->approved_templates /
+                            $item->total_templates
+                        ) * 100
+                    )
+                    : 0;
 
-        $rejectedTemplates = WhatsappTemplate::where(
-            'tenant_id',
-            $tenantId
-        )
-            ->where('status', 'REJECTED')
-            ->count();
+                return [
+                    'category' => strtoupper($item->category),
+                    'score'    => $score,
+                    'total'    => (int) $item->total_templates,
+                    'approved' => (int) $item->approved_templates,
+                ];
+            });
 
         // =====================================================
-        // WEEKLY PERFORMANCE FROM DATABASE
+        // HEALTH ALERT
+        // =====================================================
+
+        $lowestCategory = $categoryPerformance
+            ->sortBy('score')
+            ->first();
+
+        $healthAlert = null;
+
+        if ($lowestCategory && $lowestCategory['score'] < 80) {
+
+            $healthAlert =
+                strtolower($lowestCategory['category']) .
+                ' template quality dropped below optimal threshold.';
+        }
+
+        // =====================================================
+        // WEEKLY PERFORMANCE
         // =====================================================
 
         $weeklyPerformance = WhatsappMessageLog::select(
             DB::raw("DATE(created_at) as date"),
             DB::raw("COUNT(*) as sent"),
-            DB::raw("SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) as delivered")
+            DB::raw("
+            SUM(
+                CASE
+                    WHEN status = 'delivered'
+                    THEN 1
+                    ELSE 0
+                END
+            ) as delivered
+        ")
         )
             ->where('tenant_id', $tenantId)
             ->whereDate(
@@ -957,10 +1026,10 @@ class WhatsappTemplateController extends Controller
             ->map(function ($item) {
 
                 return [
-                    'date'       => $item->date,
-                    'day'        => date('D', strtotime($item->date)),
-                    'sent'       => (int) $item->sent,
-                    'delivered'  => (int) $item->delivered,
+                    'date'      => $item->date,
+                    'day'       => date('D', strtotime($item->date)),
+                    'sent'      => (int) $item->sent,
+                    'delivered' => (int) $item->delivered,
                 ];
             });
 
@@ -996,7 +1065,9 @@ class WhatsappTemplateController extends Controller
                 'delivery_rate' => $deliveryRate,
                 'quality_score' => $deliveryRate >= 90
                     ? 'Exceptional'
-                    : ($deliveryRate >= 70 ? 'Good' : 'Needs Improvement'),
+                    : ($deliveryRate >= 70
+                        ? 'Good'
+                        : 'Needs Improvement'),
             ],
 
             // =================================================
@@ -1016,9 +1087,8 @@ class WhatsappTemplateController extends Controller
             // =================================================
 
             'category_health' => [
-                'approved' => $approvedTemplates,
-                'pending'  => $pendingTemplates,
-                'rejected' => $rejectedTemplates,
+                'categories' => $categoryPerformance,
+                'alert'      => $healthAlert,
             ],
 
             // =================================================
