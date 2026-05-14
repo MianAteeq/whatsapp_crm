@@ -147,7 +147,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::put('/whatsapp/templates/{id}', [WhatsappTemplateController::class, 'update']);
 
-Route::delete('/whatsapp/templates/{id}', [WhatsappTemplateController::class, 'destroy']);
+    Route::delete('/whatsapp/templates/{id}', [WhatsappTemplateController::class, 'destroy']);
+    Route::get(
+        '/whatsapp/performance-insights',
+        [WhatsappTemplateController::class, 'performanceInsights']
+    );
 });
 
 // ============================================
