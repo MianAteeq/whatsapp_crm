@@ -821,7 +821,6 @@ class WhatsappTemplateController extends Controller
         ]);
     }
 
-
     public function performanceInsights()
     {
         $tenantId = auth()->user()->tenant_id;
@@ -833,8 +832,7 @@ class WhatsappTemplateController extends Controller
         $totalSent = WhatsappMessageLog::where(
             'tenant_id',
             $tenantId
-        )
-            ->count();
+        )->count();
 
         $totalDelivered = WhatsappMessageLog::where(
             'tenant_id',
@@ -895,12 +893,17 @@ class WhatsappTemplateController extends Controller
                 ? round(($item->total_read / $item->total_delivered) * 100, 1)
                 : 0;
 
+            $templateDeliveryRate = $item->total_sent > 0
+                ? round(($item->total_delivered / $item->total_sent) * 100, 1)
+                : 0;
+
             return [
                 'template_name' => $item->template_name,
                 'sent'          => (int) $item->total_sent,
                 'delivered'     => (int) $item->total_delivered,
                 'reads'         => (int) $item->total_read,
                 'replies'       => (int) $item->total_replied,
+                'delivery_rate' => $templateDeliveryRate,
                 'read_rate'     => $templateReadRate,
                 'status'        => $templateReadRate >= 70
                     ? 'excellent'
@@ -934,18 +937,49 @@ class WhatsappTemplateController extends Controller
             ->count();
 
         // =====================================================
-        // WEEKLY CHART DATA
+        // WEEKLY PERFORMANCE FROM DATABASE
         // =====================================================
 
-        $weeklyPerformance = [
-            ['day' => 'Mon', 'sent' => 4000, 'delivered' => 2200],
-            ['day' => 'Tue', 'sent' => 3200, 'delivered' => 1400],
-            ['day' => 'Wed', 'sent' => 1800, 'delivered' => 1200],
-            ['day' => 'Thu', 'sent' => 2600, 'delivered' => 1900],
-            ['day' => 'Fri', 'sent' => 1700, 'delivered' => 1100],
-            ['day' => 'Sat', 'sent' => 2200, 'delivered' => 1300],
-            ['day' => 'Sun', 'sent' => 3500, 'delivered' => 2100],
-        ];
+        $weeklyPerformance = WhatsappMessageLog::select(
+            DB::raw("DATE(created_at) as date"),
+            DB::raw("COUNT(*) as sent"),
+            DB::raw("SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) as delivered")
+        )
+            ->where('tenant_id', $tenantId)
+            ->whereDate(
+                'created_at',
+                '>=',
+                now()->subDays(7)
+            )
+            ->groupBy('date')
+            ->orderBy('date')
+            ->get()
+            ->map(function ($item) {
+
+                return [
+                    'date'       => $item->date,
+                    'day'        => date('D', strtotime($item->date)),
+                    'sent'       => (int) $item->sent,
+                    'delivered'  => (int) $item->delivered,
+                ];
+            });
+
+        // =====================================================
+        // RECENT ACTIVITY
+        // =====================================================
+
+        $recentActivity = WhatsappMessageLog::where(
+            'tenant_id',
+            $tenantId
+        )
+            ->latest()
+            ->take(10)
+            ->get([
+                'template_name',
+                'recipient',
+                'status',
+                'created_at',
+            ]);
 
         // =====================================================
         // FINAL RESPONSE
@@ -959,14 +993,10 @@ class WhatsappTemplateController extends Controller
             // =================================================
 
             'hero_insight' => [
-                'title' => 'Weekly Insight',
-                'message' =>
-                'Your marketing templates are performing better than last month.',
-                'growth_percentage' => 12,
                 'delivery_rate' => $deliveryRate,
                 'quality_score' => $deliveryRate >= 90
                     ? 'Exceptional'
-                    : 'Average',
+                    : ($deliveryRate >= 70 ? 'Good' : 'Needs Improvement'),
             ],
 
             // =================================================
@@ -974,10 +1004,11 @@ class WhatsappTemplateController extends Controller
             // =================================================
 
             'stats' => [
-                'delivered'     => $totalDelivered,
-                'delivery_rate' => $deliveryRate,
-                'read_rate'     => $readRate,
-                'replies'       => $totalReplies,
+                'total_sent'      => $totalSent,
+                'total_delivered' => $totalDelivered,
+                'delivery_rate'   => $deliveryRate,
+                'read_rate'       => $readRate,
+                'replies'         => $totalReplies,
             ],
 
             // =================================================
@@ -1003,6 +1034,12 @@ class WhatsappTemplateController extends Controller
             // =================================================
 
             'top_templates' => $topTemplates,
+
+            // =================================================
+            // RECENT ACTIVITY
+            // =================================================
+
+            'recent_activity' => $recentActivity,
         ]);
     }
 }
