@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\WhatsappMessageLog;
 use App\Models\WhatsappSetting;
 use App\Models\WhatsappTemplate;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -824,212 +826,89 @@ class WhatsappTemplateController extends Controller
         $tenantId = auth()->user()->tenant_id;
 
         // =====================================================
-        // SETTINGS
+        // FETCH LOGS
         // =====================================================
 
-        $setting = WhatsappSetting::where(
+        $logs = WhatsappMessageLog::where(
             'tenant_id',
             $tenantId
-        )->first();
-
-        if (!$setting) {
-            return response()->json([
-                'success' => false,
-                'message' => 'WhatsApp settings not found',
-            ], 404);
-        }
+        )->get();
 
         // =====================================================
-        // FETCH TEMPLATE ANALYTICS
+        // TOTALS
         // =====================================================
 
-        $response = Http::withToken($setting->access_token)
-            ->get(
-                "https://graph.facebook.com/v19.0/{$setting->business_account_id}/message_template_performance_metrics",
-                [
-                    'start_time' => now()->subDays(30)->timestamp,
-                    'end_time'   => now()->timestamp,
-                ]
-            );
+        $totalSent = $logs->where('status', 'sent')->count();
 
-        $metaData = $response->json();
+        $totalDelivered = $logs->where('status', 'delivered')->count();
+
+        $totalRead = $logs->where('status', 'read')->count();
+
+        $totalReplies = $logs->where('status', 'replied')->count();
 
         // =====================================================
-        // HANDLE META ERRORS
-        // =====================================================
-
-        if (isset($metaData['error'])) {
-            return response()->json([
-                'success' => false,
-                'error'   => $metaData['error'],
-            ], 422);
-        }
-
-        // =====================================================
-        // DEFAULTS
-        // =====================================================
-
-        $templates = [];
-        $totalSent = 0;
-        $totalDelivered = 0;
-        $totalRead = 0;
-        $totalClicked = 0;
-        $approved = 0;
-        $pending = 0;
-        $rejected = 0;
-
-        // =====================================================
-        // FORMAT TEMPLATE DATA
-        // =====================================================
-
-        foreach ($metaData['data'] ?? [] as $item) {
-
-            $sent = $item['sent'] ?? 0;
-            $delivered = $item['delivered'] ?? 0;
-            $read = $item['read'] ?? 0;
-            $clicked = $item['clicked'] ?? 0;
-
-            $readRate = $delivered > 0
-                ? round(($read / $delivered) * 100, 1)
-                : 0;
-
-            $clickRate = $read > 0
-                ? round(($clicked / $read) * 100, 1)
-                : 0;
-
-            $status = strtoupper($item['status'] ?? 'APPROVED');
-
-            // =========================================
-            // STATUS COUNTS
-            // =========================================
-
-            if ($status === 'APPROVED') {
-                $approved++;
-            } elseif ($status === 'PENDING') {
-                $pending++;
-            } elseif ($status === 'REJECTED') {
-                $rejected++;
-            }
-
-            // =========================================
-            // TOTALS
-            // =========================================
-
-            $totalSent += $sent;
-            $totalDelivered += $delivered;
-            $totalRead += $read;
-            $totalClicked += $clicked;
-
-            // =========================================
-            // TEMPLATE ITEM
-            // =========================================
-
-            $templates[] = [
-                'template_id'   => $item['template_id'] ?? null,
-                'template_name' => $item['template_name'] ?? 'Unknown',
-                'category'      => $item['category'] ?? 'MARKETING',
-                'status'        => $status,
-                'sent'          => $sent,
-                'delivered'     => $delivered,
-                'read'          => $read,
-                'clicked'       => $clicked,
-                'read_rate'     => $readRate,
-                'click_rate'    => $clickRate,
-            ];
-        }
-
-        // =====================================================
-        // SORT TOP TEMPLATES
-        // =====================================================
-
-        usort($templates, function ($a, $b) {
-            return $b['delivered'] <=> $a['delivered'];
-        });
-
-        $topTemplates = array_slice($templates, 0, 5);
-
-        // =====================================================
-        // GLOBAL METRICS
+        // RATES
         // =====================================================
 
         $deliveryRate = $totalSent > 0
             ? round(($totalDelivered / $totalSent) * 100, 1)
             : 0;
 
-        $overallReadRate = $totalDelivered > 0
+        $readRate = $totalDelivered > 0
             ? round(($totalRead / $totalDelivered) * 100, 1)
             : 0;
 
-        $overallClickRate = $totalRead > 0
-            ? round(($totalClicked / $totalRead) * 100, 1)
-            : 0;
-
         // =====================================================
-        // MOCK WEEKLY CHART DATA
+        // TEMPLATE ANALYTICS
         // =====================================================
 
-        $weeklyPerformance = [
-            ['day' => 'Mon', 'sent' => 4000, 'delivered' => 2200],
-            ['day' => 'Tue', 'sent' => 3200, 'delivered' => 1400],
-            ['day' => 'Wed', 'sent' => 1800, 'delivered' => 1200],
-            ['day' => 'Thu', 'sent' => 2600, 'delivered' => 1900],
-            ['day' => 'Fri', 'sent' => 1700, 'delivered' => 1100],
-            ['day' => 'Sat', 'sent' => 2200, 'delivered' => 1300],
-            ['day' => 'Sun', 'sent' => 3500, 'delivered' => 2100],
-        ];
+        $templates = WhatsappMessageLog::select(
+            'template_name',
+            DB::raw('COUNT(*) as sent'),
+            DB::raw("
+            SUM(CASE WHEN status='delivered' THEN 1 ELSE 0 END)
+            as delivered
+        "),
+            DB::raw("
+            SUM(CASE WHEN status='read' THEN 1 ELSE 0 END)
+            as reads
+        ")
+        )
+            ->where('tenant_id', $tenantId)
+            ->groupBy('template_name')
+            ->get();
 
         // =====================================================
-        // FINAL RESPONSE
+        // FORMAT TABLE
+        // =====================================================
+
+        $topTemplates = $templates->map(function ($item) {
+
+            $readRate = $item->delivered > 0
+                ? round(($item->reads / $item->delivered) * 100, 1)
+                : 0;
+
+            return [
+                'template_name' => $item->template_name,
+                'sent'          => $item->sent,
+                'delivered'     => $item->delivered,
+                'read_rate'     => $readRate,
+            ];
+        });
+
+        // =====================================================
+        // RESPONSE
         // =====================================================
 
         return response()->json([
             'success' => true,
 
-            // =========================================
-            // HERO INSIGHT
-            // =========================================
-
-            'hero_insight' => [
-                'title' => 'Weekly Insight',
-                'message' =>
-                'Your marketing templates are performing better than last month.',
-                'growth_percentage' => 12,
-                'delivery_rate' => $deliveryRate,
-                'quality_score' => 'Exceptional',
-            ],
-
-            // =========================================
-            // KPI CARDS
-            // =========================================
-
             'stats' => [
-                'delivered' => $totalDelivered,
-                'read_rate' => $overallReadRate,
-                'click_rate' => $overallClickRate,
-                'replies' => rand(500, 2000),
+                'delivered'     => $totalDelivered,
+                'delivery_rate' => $deliveryRate,
+                'read_rate'     => $readRate,
+                'replies'       => $totalReplies,
             ],
-
-            // =========================================
-            // TEMPLATE STATUS
-            // =========================================
-
-            'category_health' => [
-                'approved' => $approved,
-                'pending' => $pending,
-                'rejected' => $rejected,
-            ],
-
-            // =========================================
-            // CHARTS
-            // =========================================
-
-            'charts' => [
-                'weekly_performance' => $weeklyPerformance,
-            ],
-
-            // =========================================
-            // TOP TEMPLATES TABLE
-            // =========================================
 
             'top_templates' => $topTemplates,
         ]);
