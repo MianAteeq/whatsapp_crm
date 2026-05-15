@@ -230,79 +230,257 @@ class WhatsappMessageController extends Controller
      */
     public function sendTemplate(Request $request)
     {
-        // Validate payload
         $request->validate([
             'template_id' => 'required',
-            'phone' => 'required',
-            'components' => 'nullable|array',
+            'phone'       => 'required',
+            'parameters'  => 'nullable|array',
         ]);
 
-        // Get template
         $template = WhatsappTemplate::where(
             'tenant_id',
             auth()->user()->tenant_id
         )->findOrFail($request->template_id);
 
-        // WhatsApp settings
         $setting = WhatsappSetting::where(
             'tenant_id',
             auth()->user()->tenant_id
         )->first();
 
-        // Send template
+        /*
+    |--------------------------------------------------------------------------
+    | Decode Stored Components
+    |--------------------------------------------------------------------------
+    */
+
+        $storedComponents = is_array($template->components)
+            ? $template->components
+            : json_decode($template->components, true);
+
+        $components = [];
+
+        /*
+    |--------------------------------------------------------------------------
+    | Build Header
+    |--------------------------------------------------------------------------
+    */
+
+        $header = collect($storedComponents)
+            ->firstWhere('type', 'HEADER');
+
+        if ($header) {
+
+            /*
+        |--------------------------------------------------------------------------
+        | IMAGE HEADER
+        |--------------------------------------------------------------------------
+        */
+
+            if (($header['format'] ?? '') === 'IMAGE') {
+
+                $imageLink =
+                    $request->header_image
+                    ?? ($header['example']['header_handle'][0] ?? null);
+
+                if ($imageLink) {
+                    $components[] = [
+                        'type' => 'header',
+                        'parameters' => [
+                            [
+                                'type'  => 'image',
+                                'image' => [
+                                    'link' => $imageLink,
+                                ],
+                            ],
+                        ],
+                    ];
+                }
+            }
+
+            /*
+        |--------------------------------------------------------------------------
+        | VIDEO HEADER
+        |--------------------------------------------------------------------------
+        */
+
+            if (($header['format'] ?? '') === 'VIDEO') {
+
+                $videoLink =
+                    $request->header_video
+                    ?? ($header['example']['header_handle'][0] ?? null);
+
+                if ($videoLink) {
+                    $components[] = [
+                        'type' => 'header',
+                        'parameters' => [
+                            [
+                                'type'  => 'video',
+                                'video' => [
+                                    'link' => $videoLink,
+                                ],
+                            ],
+                        ],
+                    ];
+                }
+            }
+
+            /*
+        |--------------------------------------------------------------------------
+        | DOCUMENT HEADER
+        |--------------------------------------------------------------------------
+        */
+
+            if (($header['format'] ?? '') === 'DOCUMENT') {
+
+                $documentLink =
+                    $request->header_document
+                    ?? ($header['example']['header_handle'][0] ?? null);
+
+                if ($documentLink) {
+                    $components[] = [
+                        'type' => 'header',
+                        'parameters' => [
+                            [
+                                'type'     => 'document',
+                                'document' => [
+                                    'link'     => $documentLink,
+                                    'filename' => 'document.pdf',
+                                ],
+                            ],
+                        ],
+                    ];
+                }
+            }
+        }
+
+        /*
+    |--------------------------------------------------------------------------
+    | Build Body Parameters
+    |--------------------------------------------------------------------------
+    */
+
+        $body = collect($storedComponents)
+            ->firstWhere('type', 'BODY');
+
+        if ($body) {
+
+            $bodyParameters = [];
+
+            if (!empty($request->parameters)) {
+
+                foreach ($request->parameters as $parameter) {
+
+                    $bodyParameters[] = [
+                        'type' => 'text',
+                        'text' => $parameter,
+                    ];
+                }
+            } else {
+
+                /*
+            |--------------------------------------------------------------------------
+            | Use Example Data If No Parameters
+            |--------------------------------------------------------------------------
+            */
+
+                $examples = $body['example']['body_text'][0] ?? [];
+
+                foreach ($examples as $parameter) {
+
+                    $bodyParameters[] = [
+                        'type' => 'text',
+                        'text' => $parameter,
+                    ];
+                }
+            }
+
+            if (!empty($bodyParameters)) {
+
+                $components[] = [
+                    'type'       => 'body',
+                    'parameters' => $bodyParameters,
+                ];
+            }
+        }
+
+        /*
+    |--------------------------------------------------------------------------
+    | Send Message
+    |--------------------------------------------------------------------------
+    */
+
+        $payload = [
+            'messaging_product' => 'whatsapp',
+            'to'                => $request->phone,
+            'type'              => 'template',
+            'template'          => [
+                'name'       => $template->name,
+                'language'   => [
+                    'code' => $template->language ?? 'en_US',
+                ],
+                'components' => $components,
+            ],
+        ];
+
         $response = Http::withToken($setting->access_token)
             ->post(
                 "https://graph.facebook.com/v19.0/{$setting->phone_number_id}/messages",
-                [
-                    'messaging_product' => 'whatsapp',
-                    'to' => $request->phone,
-                    'type' => 'template',
-                    'template' => [
-                        'name' => $template->name,
-                        'language' => [
-                            'code' => $template->language ?? 'en_US',
-                        ],
-                        'components' => $request->components ?? [],
-                    ],
-                ]
+                $payload
             )
             ->json();
 
-            $contact = Contact::firstOrCreate(
-                [
-                    'tenant_id' => auth()->user()->tenant_id,
-                    'phone' => $request->phone,
-                ],
-                [
-                    'name' => $request->phone,
-                ]
-            );
+        /*
+    |--------------------------------------------------------------------------
+    | Store Contact
+    |--------------------------------------------------------------------------
+    */
 
-            $conversation = Conversation::firstOrCreate(
-                [
-                    'tenant_id' => auth()->user()->tenant_id,
-                    'contact_id' => $contact->id,
-                ],
-                [
-                    'last_message' => '[Template] ' . $template->name,
-                    'last_message_at' => now(),
-                ]
-            );
+        $contact = Contact::firstOrCreate(
+            [
+                'tenant_id' => auth()->user()->tenant_id,
+                'phone'     => $request->phone,
+            ],
+            [
+                'name' => $request->phone,
+            ]
+        );
 
-        // Store message
+        /*
+    |--------------------------------------------------------------------------
+    | Store Conversation
+    |--------------------------------------------------------------------------
+    */
+
+        $conversation = Conversation::firstOrCreate(
+            [
+                'tenant_id' => auth()->user()->tenant_id,
+                'contact_id' => $contact->id,
+            ],
+            [
+                'last_message' => '[Template] ' . $template->name,
+                'last_message_at' => now(),
+            ]
+        );
+
+        /*
+    |--------------------------------------------------------------------------
+    | Store Message
+    |--------------------------------------------------------------------------
+    */
+
         Message::create([
-            'tenant_id' => auth()->user()->tenant_id,
+            'tenant_id'      => auth()->user()->tenant_id,
             'conversation_id' => $conversation->id,
-            'message_id' => $response['messages'][0]['id'] ?? null,
-            'direction' => 'outgoing',
-            'message' => '[Template] ' . $template->name,
-            'type' => 'template',
-            'status' => isset($response['messages']) ? 'sent' : 'failed',
-            'payload' => $response,
+            'message_id'     => $response['messages'][0]['id'] ?? null,
+            'direction'      => 'outgoing',
+            'message'        => '[Template] ' . $template->name,
+            'type'           => 'template',
+            'status'         => isset($response['messages']) ? 'sent' : 'failed',
+            'payload'        => $response,
         ]);
 
         return response()->json([
             'success' => isset($response['messages']),
+            'payload' => $payload,
             'response' => $response,
         ]);
     }
