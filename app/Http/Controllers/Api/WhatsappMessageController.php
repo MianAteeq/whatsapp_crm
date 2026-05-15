@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\WhatsappSetting;
+use App\Models\WhatsappTemplate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 
@@ -88,7 +89,6 @@ class WhatsappMessageController extends Controller
             'success' => true,
             'response' => $response,
         ]);
-
     }
 
     /**
@@ -229,60 +229,58 @@ class WhatsappMessageController extends Controller
      */
     public function sendTemplate(Request $request)
     {
-        // Validate input
+        // Validate payload
         $request->validate([
-            'conversation_id' => 'required',
-            'template_name' => 'required',
-            'language' => 'required',
+            'template_id' => 'required',
+            'phone' => 'required',
+            'components' => 'nullable|array',
         ]);
 
-        // Retrieve conversation for authenticated tenant
-        $conversation = Conversation::where(
+        // Get template
+        $template = WhatsappTemplate::where(
             'tenant_id',
             auth()->user()->tenant_id
-        )->findOrFail($request->conversation_id);
+        )->findOrFail($request->template_id);
 
-        // Get contact from conversation
-        $contact = $conversation->contact;
-
-        // Retrieve WhatsApp settings for authenticated tenant
+        // WhatsApp settings
         $setting = WhatsappSetting::where(
             'tenant_id',
             auth()->user()->tenant_id
         )->first();
 
-        // Send template message to Meta's WhatsApp API
+        // Send template
         $response = Http::withToken($setting->access_token)
             ->post(
                 "https://graph.facebook.com/v19.0/{$setting->phone_number_id}/messages",
                 [
                     'messaging_product' => 'whatsapp',
-                    'to' => $contact->phone,
+                    'to' => $request->phone,
                     'type' => 'template',
                     'template' => [
-                        'name' => $request->template_name,
+                        'name' => $template->name,
                         'language' => [
-                            'code' => $request->language,
+                            'code' => $template->language ?? 'en_US',
                         ],
+                        'components' => $request->components ?? [],
                     ],
                 ]
             )
             ->json();
 
-        // Store message record in database
+        // Store message
         Message::create([
             'tenant_id' => auth()->user()->tenant_id,
-            'conversation_id' => $conversation->id,
+            'conversation_id' => null,
             'message_id' => $response['messages'][0]['id'] ?? null,
             'direction' => 'outgoing',
-            'message' => '[Template] ' . $request->template_name,
+            'message' => '[Template] ' . $template->name,
             'type' => 'template',
-            'status' => 'sent',
+            'status' => isset($response['messages']) ? 'sent' : 'failed',
             'payload' => $response,
         ]);
 
         return response()->json([
-            'success' => true,
+            'success' => isset($response['messages']),
             'response' => $response,
         ]);
     }
