@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\WhatsappSetting;
@@ -267,10 +268,31 @@ class WhatsappMessageController extends Controller
             )
             ->json();
 
+            $contact = Contact::firstOrCreate(
+                [
+                    'tenant_id' => auth()->user()->tenant_id,
+                    'phone' => $request->phone,
+                ],
+                [
+                    'name' => $request->phone,
+                ]
+            );
+
+            $conversation = Conversation::firstOrCreate(
+                [
+                    'tenant_id' => auth()->user()->tenant_id,
+                    'contact_id' => $contact->id,
+                ],
+                [
+                    'last_message' => '[Template] ' . $template->name,
+                    'last_message_at' => now(),
+                ]
+            );
+
         // Store message
         Message::create([
             'tenant_id' => auth()->user()->tenant_id,
-            'conversation_id' => null,
+            'conversation_id' => $conversation->id,
             'message_id' => $response['messages'][0]['id'] ?? null,
             'direction' => 'outgoing',
             'message' => '[Template] ' . $template->name,
