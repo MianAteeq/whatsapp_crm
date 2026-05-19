@@ -281,7 +281,7 @@ if (!empty($request->parameters)) {
     }
 }
 
-return $messageText;
+// return $messageText;
 
         $storedComponents = is_array($template->components)
             ? $template->components
@@ -515,7 +515,7 @@ return $messageText;
                 'wa_id'     => $wa_id,
             ],
             [
-                'last_message' => '[Template] ' . $template->name,
+                'last_message' => $messageText,
                 'last_message_at' => now(),
             ]
         );
