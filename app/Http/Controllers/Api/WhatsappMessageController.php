@@ -240,20 +240,32 @@ class WhatsappMessageController extends Controller
 
 $components = $template->components;
 
-$messageText = '';
+$headerText = '';
+$bodyText = '';
+$footerText = '';
 
-if (!empty($components)) {
+foreach ($components as $component) {
 
-    foreach ($components as $component) {
+    $type = $component['type'] ?? '';
 
-        if (($component['type'] ?? '') === 'BODY') {
+    if ($type === 'HEADER') {
+        $headerText = $component['text'] ?? '';
+    }
 
-            $messageText = $component['text'] ?? '';
+    if ($type === 'BODY') {
+        $bodyText = $component['text'] ?? '';
+    }
 
-            break;
-        }
+    if ($type === 'FOOTER') {
+        $footerText = $component['text'] ?? '';
     }
 }
+
+$messageText = trim(
+    $headerText . "\n\n" .
+    $bodyText . "\n\n" .
+    $footerText
+);
 
 if (!empty($request->parameters)) {
 
