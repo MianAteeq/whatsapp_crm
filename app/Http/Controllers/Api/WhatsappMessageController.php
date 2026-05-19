@@ -238,15 +238,24 @@ class WhatsappMessageController extends Controller
             auth()->user()->tenant_id
         )->first();
 
-        $messageText = '';
+$components = json_decode($template->components, true);
 
-if (!empty($template->body)) {
-    $messageText = $template->body;
-} elseif (!empty($template->content)) {
-    $messageText = $template->content;
+$messageText = '';
+
+if (!empty($components)) {
+
+    foreach ($components as $component) {
+
+        if (($component['type'] ?? '') === 'BODY') {
+
+            $messageText = $component['text'] ?? '';
+
+            break;
+        }
+    }
 }
 
-if (!empty($request->parameters) && !empty($messageText)) {
+if (!empty($request->parameters)) {
 
     foreach ($request->parameters as $index => $parameter) {
 
