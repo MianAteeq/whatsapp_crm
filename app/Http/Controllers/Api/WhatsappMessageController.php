@@ -238,6 +238,29 @@ class WhatsappMessageController extends Controller
             auth()->user()->tenant_id
         )->first();
 
+        $messageText = '';
+
+if (!empty($template->body)) {
+    $messageText = $template->body;
+} elseif (!empty($template->content)) {
+    $messageText = $template->content;
+}
+
+if (!empty($request->parameters) && !empty($messageText)) {
+
+    foreach ($request->parameters as $index => $parameter) {
+
+        $placeholder = '{{' . ($index + 1) . '}}';
+
+        $messageText = str_replace(
+            $placeholder,
+            $parameter,
+            $messageText
+        );
+    }
+}
+dd($messageText);
+
         $storedComponents = is_array($template->components)
             ? $template->components
             : json_decode($template->components, true);
@@ -481,27 +504,7 @@ class WhatsappMessageController extends Controller
     |--------------------------------------------------------------------------
     */
 
-        $messageText = '';
-
-if (!empty($template->body)) {
-    $messageText = $template->body;
-} elseif (!empty($template->content)) {
-    $messageText = $template->content;
-}
-
-if (!empty($request->parameters) && !empty($messageText)) {
-
-    foreach ($request->parameters as $index => $parameter) {
-
-        $placeholder = '{{' . ($index + 1) . '}}';
-
-        $messageText = str_replace(
-            $placeholder,
-            $parameter,
-            $messageText
-        );
-    }
-}
+        
 
 
         Message::create([
