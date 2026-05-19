@@ -238,7 +238,7 @@ class WhatsappMessageController extends Controller
             auth()->user()->tenant_id
         )->first();
 
-$components = json_decode($template->components, true);
+$components = $template->components;
 
 $messageText = '';
 
