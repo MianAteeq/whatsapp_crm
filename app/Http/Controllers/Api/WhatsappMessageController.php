@@ -218,22 +218,14 @@ class WhatsappMessageController extends Controller
             'response' => $response,
         ]);
     }
-
-    /**
-     * Send a WhatsApp template message
-     * 
-     * Sends a pre-approved WhatsApp template message with specified language.
-     * Templates are managed in Meta's WhatsApp Business account.
-     * 
-     * @param Request $request Contains conversation_id, template_name, and language code
-     * @return \Illuminate\Http\JsonResponse Success response with Meta's message ID
-     */
+    
     public function sendTemplate(Request $request)
     {
         $request->validate([
             'template_id' => 'required',
             'phone'       => 'required',
             'parameters'  => 'nullable|array',
+            'components'  => 'nullable|array',
         ]);
 
         $template = WhatsappTemplate::where(
@@ -246,12 +238,6 @@ class WhatsappMessageController extends Controller
             auth()->user()->tenant_id
         )->first();
 
-        /*
-    |--------------------------------------------------------------------------
-    | Decode Stored Components
-    |--------------------------------------------------------------------------
-    */
-
         $storedComponents = is_array($template->components)
             ? $template->components
             : json_decode($template->components, true);
@@ -260,7 +246,7 @@ class WhatsappMessageController extends Controller
 
         /*
     |--------------------------------------------------------------------------
-    | Build Header
+    | HEADER COMPONENT
     |--------------------------------------------------------------------------
     */
 
@@ -282,6 +268,7 @@ class WhatsappMessageController extends Controller
                     ?? ($header['example']['header_handle'][0] ?? null);
 
                 if ($imageLink) {
+
                     $components[] = [
                         'type' => 'header',
                         'parameters' => [
@@ -309,6 +296,7 @@ class WhatsappMessageController extends Controller
                     ?? ($header['example']['header_handle'][0] ?? null);
 
                 if ($videoLink) {
+
                     $components[] = [
                         'type' => 'header',
                         'parameters' => [
@@ -336,6 +324,7 @@ class WhatsappMessageController extends Controller
                     ?? ($header['example']['header_handle'][0] ?? null);
 
                 if ($documentLink) {
+
                     $components[] = [
                         'type' => 'header',
                         'parameters' => [
@@ -354,7 +343,7 @@ class WhatsappMessageController extends Controller
 
         /*
     |--------------------------------------------------------------------------
-    | Build Body Parameters
+    | BODY COMPONENT
     |--------------------------------------------------------------------------
     */
 
@@ -365,7 +354,28 @@ class WhatsappMessageController extends Controller
 
             $bodyParameters = [];
 
-            if (!empty($request->parameters)) {
+            /*
+        |--------------------------------------------------------------------------
+        | 1. USE COMPONENTS FROM REQUEST
+        |--------------------------------------------------------------------------
+        */
+
+            if (!empty($request->components)) {
+
+                foreach ($request->components as $component) {
+
+                    if (($component['type'] ?? '') === 'body') {
+
+                        $bodyParameters = $component['parameters'] ?? [];
+                    }
+                }
+            }
+
+            /*
+        |--------------------------------------------------------------------------
+        | 2. USE SIMPLE PARAMETERS ARRAY
+        |--------------------------------------------------------------------------
+        */ elseif (!empty($request->parameters)) {
 
                 foreach ($request->parameters as $parameter) {
 
@@ -374,13 +384,13 @@ class WhatsappMessageController extends Controller
                         'text' => $parameter,
                     ];
                 }
-            } else {
+            }
 
-                /*
-            |--------------------------------------------------------------------------
-            | Use Example Data If No Parameters
-            |--------------------------------------------------------------------------
-            */
+            /*
+        |--------------------------------------------------------------------------
+        | 3. FALLBACK TO TEMPLATE EXAMPLES
+        |--------------------------------------------------------------------------
+        */ else {
 
                 $examples = $body['example']['body_text'][0] ?? [];
 
@@ -404,7 +414,7 @@ class WhatsappMessageController extends Controller
 
         /*
     |--------------------------------------------------------------------------
-    | Send Message
+    | FINAL PAYLOAD
     |--------------------------------------------------------------------------
     */
 
@@ -430,7 +440,7 @@ class WhatsappMessageController extends Controller
 
         /*
     |--------------------------------------------------------------------------
-    | Store Contact
+    | CONTACT
     |--------------------------------------------------------------------------
     */
 
@@ -446,7 +456,7 @@ class WhatsappMessageController extends Controller
 
         /*
     |--------------------------------------------------------------------------
-    | Store Conversation
+    | CONVERSATION
     |--------------------------------------------------------------------------
     */
 
@@ -463,24 +473,26 @@ class WhatsappMessageController extends Controller
 
         /*
     |--------------------------------------------------------------------------
-    | Store Message
+    | SAVE MESSAGE
     |--------------------------------------------------------------------------
     */
 
         Message::create([
-            'tenant_id'      => auth()->user()->tenant_id,
+            'tenant_id'       => auth()->user()->tenant_id,
             'conversation_id' => $conversation->id,
-            'message_id'     => $response['messages'][0]['id'] ?? null,
-            'direction'      => 'outgoing',
-            'message'        => '[Template] ' . $template->name,
-            'type'           => 'template',
-            'status'         => isset($response['messages']) ? 'sent' : 'failed',
-            'payload'        => $response,
+            'message_id'      => $response['messages'][0]['id'] ?? null,
+            'direction'       => 'outgoing',
+            'message'         => '[Template] ' . $template->name,
+            'type'            => 'template',
+            'status'          => isset($response['messages'])
+                ? 'sent'
+                : 'failed',
+            'payload'         => $response,
         ]);
 
         return response()->json([
-            'success' => isset($response['messages']),
-            'payload' => $payload,
+            'success'  => isset($response['messages']),
+            'payload'  => $payload,
             'response' => $response,
         ]);
     }
