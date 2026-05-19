@@ -259,7 +259,8 @@ if (!empty($request->parameters) && !empty($messageText)) {
         );
     }
 }
-dd($messageText);
+
+return $messageText;
 
         $storedComponents = is_array($template->components)
             ? $template->components
