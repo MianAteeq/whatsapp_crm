@@ -218,7 +218,7 @@ class WhatsappMessageController extends Controller
             'response' => $response,
         ]);
     }
-    
+
     public function sendTemplate(Request $request)
     {
         $request->validate([
@@ -444,13 +444,13 @@ class WhatsappMessageController extends Controller
     |--------------------------------------------------------------------------
     */
 
-    $wa_id = $response['contacts'][0]['wa_id'] ?? null;
+        $wa_id = $response['contacts'][0]['wa_id'] ?? null;
 
         $contact = Contact::firstOrCreate(
             [
                 'tenant_id' => auth()->user()->tenant_id,
                 'phone'     => $request->phone,
-               
+
             ],
             [
                 'name' => $request->phone,
@@ -481,12 +481,29 @@ class WhatsappMessageController extends Controller
     |--------------------------------------------------------------------------
     */
 
+        $messageText = $template->body ?? $template->content ?? '';
+
+        if (!empty($request->parameters)) {
+
+            foreach ($request->parameters as $index => $parameter) {
+
+                $placeholder = '{{' . ($index + 1) . '}}';
+
+                $messageText = str_replace(
+                    $placeholder,
+                    $parameter,
+                    $messageText
+                );
+            }
+        }
+
+
         Message::create([
             'tenant_id'       => auth()->user()->tenant_id,
             'conversation_id' => $conversation->id,
             'message_id'      => $response['messages'][0]['id'] ?? null,
             'direction'       => 'outgoing',
-            'message'         => '[Template] ' . $template->name,
+            'message'         =>  $messageText,
             'type'            => 'template',
             'status'          => isset($response['messages'])
                 ? 'sent'
