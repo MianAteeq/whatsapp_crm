@@ -444,10 +444,13 @@ class WhatsappMessageController extends Controller
     |--------------------------------------------------------------------------
     */
 
+    $wa_id = $response['contacts'][0]['wa_id'] ?? null;
+
         $contact = Contact::firstOrCreate(
             [
                 'tenant_id' => auth()->user()->tenant_id,
                 'phone'     => $request->phone,
+               
             ],
             [
                 'name' => $request->phone,
@@ -464,6 +467,7 @@ class WhatsappMessageController extends Controller
             [
                 'tenant_id' => auth()->user()->tenant_id,
                 'contact_id' => $contact->id,
+                'wa_id'     => $wa_id,
             ],
             [
                 'last_message' => '[Template] ' . $template->name,
