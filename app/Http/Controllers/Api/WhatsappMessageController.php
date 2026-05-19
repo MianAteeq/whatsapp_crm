@@ -481,21 +481,27 @@ class WhatsappMessageController extends Controller
     |--------------------------------------------------------------------------
     */
 
-        $messageText = $template->body ?? $template->content ?? '';
+        $messageText = '';
 
-        if (!empty($request->parameters)) {
+if (!empty($template->body)) {
+    $messageText = $template->body;
+} elseif (!empty($template->content)) {
+    $messageText = $template->content;
+}
 
-            foreach ($request->parameters as $index => $parameter) {
+if (!empty($request->parameters) && !empty($messageText)) {
 
-                $placeholder = '{{' . ($index + 1) . '}}';
+    foreach ($request->parameters as $index => $parameter) {
 
-                $messageText = str_replace(
-                    $placeholder,
-                    $parameter,
-                    $messageText
-                );
-            }
-        }
+        $placeholder = '{{' . ($index + 1) . '}}';
+
+        $messageText = str_replace(
+            $placeholder,
+            $parameter,
+            $messageText
+        );
+    }
+}
 
 
         Message::create([
