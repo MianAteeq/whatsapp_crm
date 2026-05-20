@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Jobs\SendCampaignJob;
 use App\Models\Campaign;
 use App\Models\CampaignContact;
+use App\Models\Contact;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
