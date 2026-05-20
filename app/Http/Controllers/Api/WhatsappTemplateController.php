@@ -283,13 +283,13 @@ class WhatsappTemplateController extends Controller
 
                         if (
 
-                            !empty($component['media_url'])
+                            !empty($request['media_url'])
 
                         ) {
 
                             $mediaUrl =
 
-                                $component['media_url'];
+                                $request['media_url'];
                         }
 
 
@@ -668,6 +668,7 @@ class WhatsappTemplateController extends Controller
 
 
             'media_url' => $mediaUrl,
+            'media_mime' => $request['media_mime'] ?? null,
 
 
 
@@ -1335,13 +1336,13 @@ class WhatsappTemplateController extends Controller
 
                         if (
 
-                            !empty($component['media_url'])
+                            !empty($request['media_url'])
 
                         ) {
 
                             $mediaUrl =
 
-                                $component['media_url'];
+                                $request['media_url'];
                         }
 
 
@@ -1686,6 +1687,7 @@ class WhatsappTemplateController extends Controller
 
 
             'media_url' => $mediaUrl,
+            'media_mime' => $request['media_mime'] ?? $template->media_mime,
 
 
 
