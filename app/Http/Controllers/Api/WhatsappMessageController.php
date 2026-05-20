@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\WhatsappMessageLog;
 use App\Models\WhatsappSetting;
 use App\Models\WhatsappTemplate;
 use Illuminate\Http\Request;
@@ -238,50 +239,50 @@ class WhatsappMessageController extends Controller
             auth()->user()->tenant_id
         )->first();
 
-$components = $template->components;
+        $components = $template->components;
 
-$headerText = '';
-$bodyText = '';
-$footerText = '';
+        $headerText = '';
+        $bodyText = '';
+        $footerText = '';
 
-foreach ($components as $component) {
+        foreach ($components as $component) {
 
-    $type = $component['type'] ?? '';
+            $type = $component['type'] ?? '';
 
-    if ($type === 'HEADER') {
-        $headerText = $component['text'] ?? '';
-    }
+            if ($type === 'HEADER') {
+                $headerText = $component['text'] ?? '';
+            }
 
-    if ($type === 'BODY') {
-        $bodyText = $component['text'] ?? '';
-    }
+            if ($type === 'BODY') {
+                $bodyText = $component['text'] ?? '';
+            }
 
-    if ($type === 'FOOTER') {
-        $footerText = $component['text'] ?? '';
-    }
-}
+            if ($type === 'FOOTER') {
+                $footerText = $component['text'] ?? '';
+            }
+        }
 
-$messageText = trim(
-    $headerText . "\n\n" .
-    $bodyText . "\n\n" .
-    $footerText
-);
-
-if (!empty($request->parameters)) {
-
-    foreach ($request->parameters as $index => $parameter) {
-
-        $placeholder = '{{' . ($index + 1) . '}}';
-
-        $messageText = str_replace(
-            $placeholder,
-            $parameter,
-            $messageText
+        $messageText = trim(
+            $headerText . "\n\n" .
+                $bodyText . "\n\n" .
+                $footerText
         );
-    }
-}
 
-// return $messageText;
+        if (!empty($request->parameters)) {
+
+            foreach ($request->parameters as $index => $parameter) {
+
+                $placeholder = '{{' . ($index + 1) . '}}';
+
+                $messageText = str_replace(
+                    $placeholder,
+                    $parameter,
+                    $messageText
+                );
+            }
+        }
+
+        // return $messageText;
 
         $storedComponents = is_array($template->components)
             ? $template->components
@@ -526,7 +527,7 @@ if (!empty($request->parameters)) {
     |--------------------------------------------------------------------------
     */
 
-        
+
 
 
         Message::create([
@@ -540,6 +541,20 @@ if (!empty($request->parameters)) {
                 ? 'sent'
                 : 'failed',
             'payload'         => $response,
+        ]);
+
+        WhatsappMessageLog::create([
+
+            'tenant_id' => auth()->user()->tenant_id,
+
+            'message_id' => $response['messages'][0]['id'] ?? null,
+
+            'template_name' => $template->name,
+
+            'recipient' => $contact->phone,
+
+            'status' => 'sent'
+
         ]);
 
         return response()->json([

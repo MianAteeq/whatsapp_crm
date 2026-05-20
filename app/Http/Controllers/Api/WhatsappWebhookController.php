@@ -11,6 +11,7 @@ use App\Models\CampaignContact;
 use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Message;
+use App\Models\WhatsappMessageLog;
 use App\Models\WhatsappSetting;
 use App\Models\WhatsappTemplate;
 use Illuminate\Http\Request;
@@ -1491,6 +1492,31 @@ class WhatsappWebhookController extends Controller
                             }
                         }
                     }
+
+                     $message_log = WhatsappMessageLog::where(
+
+                        'message_id',
+
+                        $messageId
+
+                    )->first();
+
+                    if(isset($message_log)){
+
+                       WhatsappMessageLog::where(
+
+                            'message_id',
+
+                            $messageId
+
+                        )->update([
+
+                            'status' => $messageStatus
+
+                        ]);
+                    }
+
+
 
 
 

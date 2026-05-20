@@ -6,6 +6,7 @@ use App\Models\Message;
 use App\Models\Campaign;
 use App\Models\Conversation;
 use App\Models\CampaignContact;
+use App\Models\WhatsappMessageLog;
 use App\Models\WhatsappSetting;
 use Illuminate\Bus\Queueable;
 use Illuminate\Support\Facades\Http;
@@ -244,7 +245,7 @@ class SendCampaignJob implements ShouldQueue
                     // STORE MESSAGE
                     // ==========================================
 
-                    Message::create([
+                  $message= Message::create([
 
                         'tenant_id' => $campaign->tenant_id,
                         'campaign_id' => $campaign->id,
@@ -264,6 +265,20 @@ class SendCampaignJob implements ShouldQueue
                         'status' => 'sent',
 
                         'payload' => $response
+
+                    ]);
+
+                    WhatsappMessageLog::create([
+
+                        'tenant_id' => $campaign->tenant_id,
+
+                        'message_id' => $messageId,
+
+                        'template_name' => $template->name,
+
+                        'recipient' => $contact->phone,
+
+                        'status' => 'sent'
 
                     ]);
 
