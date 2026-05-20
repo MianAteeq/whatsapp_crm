@@ -907,41 +907,103 @@ class WhatsappTemplateController extends Controller
             ->orderByDesc('total_sent')
             ->get();
 
-            return $templates;
+            // return $templates;
 
         // =====================================================
         // FORMAT TOP TEMPLATES
         // =====================================================
 
-        $topTemplates = $templates->map(function ($item) {
+       $topTemplates = $templates->map(function ($item) {
 
-            $templateDeliveryRate = $item->total_sent > 0
-                ? round(
-                    ($item->total_delivered / $item->total_sent) * 100,
-                    1
-                )
-                : 0;
+    // ======================================
+    // FIX INCONSISTENT DATA
+    // ======================================
 
-            $templateReadRate = $item->total_delivered > 0
-                ? round(
-                    ($item->total_read / $item->total_delivered) * 100,
-                    1
-                )
-                : 0;
+    $sent = (int) $item->total_sent;
 
-            return [
-                'template_name' => $item->template_name,
-                'sent'          => (int) $item->total_sent,
-                'delivered'     => (int) $item->total_delivered,
-                'reads'         => (int) $item->total_read,
-                'replies'       => (int) $item->total_replied,
-                'delivery_rate' => $templateDeliveryRate,
-                'read_rate'     => $templateReadRate,
-                'status'        => $templateReadRate >= 70
-                    ? 'excellent'
-                    : ($templateReadRate >= 40 ? 'good' : 'poor'),
-            ];
-        });
+    $delivered = max(
+
+        (int) $item->total_delivered,
+
+        (int) $item->total_read
+
+    );
+
+    $read = (int) $item->total_read;
+
+    $replied = (int) $item->total_replied;
+
+
+
+    // ======================================
+    // DELIVERY RATE
+    // ======================================
+
+    $templateDeliveryRate = $sent > 0
+
+        ? round(
+
+            ($delivered / $sent) * 100,
+
+            1
+
+        )
+
+        : 0;
+
+
+
+    // ======================================
+    // READ RATE
+    // ======================================
+
+    $templateReadRate = $delivered > 0
+
+        ? round(
+
+            ($read / $delivered) * 100,
+
+            1
+
+        )
+
+        : 0;
+
+
+
+    return [
+
+        'template_name' => $item->template_name,
+
+        'sent' => $sent,
+
+        'delivered' => $delivered,
+
+        'reads' => $read,
+
+        'replies' => $replied,
+
+        'delivery_rate' => $templateDeliveryRate,
+
+        'read_rate' => $templateReadRate,
+
+        'status' => $templateReadRate >= 70
+
+            ? 'excellent'
+
+            : (
+
+                $templateReadRate >= 40
+
+                    ? 'good'
+
+                    : 'poor'
+
+            ),
+
+    ];
+
+});
 
         // =====================================================
         // CATEGORY HEALTH
