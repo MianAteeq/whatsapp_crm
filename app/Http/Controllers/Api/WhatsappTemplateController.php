@@ -907,6 +907,8 @@ class WhatsappTemplateController extends Controller
             ->orderByDesc('total_sent')
             ->get();
 
+            return $templates;
+
         // =====================================================
         // FORMAT TOP TEMPLATES
         // =====================================================
