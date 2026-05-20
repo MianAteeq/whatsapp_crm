@@ -17,6 +17,7 @@ return new class extends Migration
             $table->string('media_url')->nullable();
 
             $table->string('media_mime')->nullable();
+            $table->json('variables')->nullable();
         });
     }
 

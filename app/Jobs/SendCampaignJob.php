@@ -132,19 +132,24 @@ class SendCampaignJob implements ShouldQueue
 
 
         // ======================================================
-        // TEMPLATE VARIABLES
+        // DEFAULT VARIABLE MAPPING
         // ======================================================
 
-        $templateVariables =
+        $defaultFields = [
 
-            is_array($template->variables)
+            1 => 'name',
 
-            ? $template->variables
+            2 => 'email',
 
-            : json_decode(
-                $template->variables,
-                true
-            );
+            3 => 'phone',
+
+            4 => 'company',
+
+            5 => 'address',
+
+            6 => 'website',
+
+        ];
 
 
 
@@ -236,7 +241,7 @@ class SendCampaignJob implements ShouldQueue
 
 
                         // ==============================================
-                        // IMAGE
+                        // IMAGE HEADER
                         // ==============================================
 
                         if (
@@ -277,7 +282,7 @@ class SendCampaignJob implements ShouldQueue
 
 
                         // ==============================================
-                        // VIDEO
+                        // VIDEO HEADER
                         // ==============================================
 
                         elseif (
@@ -318,7 +323,7 @@ class SendCampaignJob implements ShouldQueue
 
 
                         // ==============================================
-                        // DOCUMENT
+                        // DOCUMENT HEADER
                         // ==============================================
 
                         elseif (
@@ -402,7 +407,7 @@ class SendCampaignJob implements ShouldQueue
 
                                 $field =
 
-                                    $templateVariables[$variableNumber]
+                                    $defaultFields[(int) $variableNumber]
 
                                     ?? null;
 
@@ -520,7 +525,7 @@ class SendCampaignJob implements ShouldQueue
 
                             $field =
 
-                                $templateVariables[$variableNumber]
+                                $defaultFields[(int) $variableNumber]
 
                                 ?? null;
 
@@ -587,6 +592,10 @@ class SendCampaignJob implements ShouldQueue
 
 
 
+                        // ==============================================
+                        // ADD BODY PARAMETERS
+                        // ==============================================
+
                         if (!empty($parameters)) {
 
                             $components[] = [
@@ -650,7 +659,7 @@ class SendCampaignJob implements ShouldQueue
 
                 Log::info(
 
-                    'Campaign Template Payload',
+                    'Campaign Payload',
 
                     $payload
 
@@ -682,7 +691,7 @@ class SendCampaignJob implements ShouldQueue
 
                 Log::info(
 
-                    'Campaign Template Response',
+                    'Campaign Response',
 
                     $response
 
@@ -737,7 +746,7 @@ class SendCampaignJob implements ShouldQueue
 
 
                     // ==============================================
-                    // MESSAGE LOG
+                    // STORE MESSAGE LOG
                     // ==============================================
 
                     WhatsappMessageLog::create([
@@ -824,6 +833,20 @@ class SendCampaignJob implements ShouldQueue
                     $campaign->increment(
 
                         'failed_count'
+
+                    );
+
+
+
+                    Log::error(
+
+                        'Campaign Failed',
+
+                        [
+
+                            'response' => $response
+
+                        ]
 
                     );
                 }
