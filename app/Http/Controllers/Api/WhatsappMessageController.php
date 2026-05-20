@@ -310,7 +310,7 @@ class WhatsappMessageController extends Controller
             if (($header['format'] ?? '') === 'IMAGE') {
 
                 $imageLink =
-                    $request->header_image
+                    $template->media_url
                     ?? ($header['example']['header_handle'][0] ?? null);
 
                 if ($imageLink) {
@@ -338,7 +338,7 @@ class WhatsappMessageController extends Controller
             if (($header['format'] ?? '') === 'VIDEO') {
 
                 $videoLink =
-                    $request->header_video
+                    $template->media_url
                     ?? ($header['example']['header_handle'][0] ?? null);
 
                 if ($videoLink) {
@@ -366,7 +366,7 @@ class WhatsappMessageController extends Controller
             if (($header['format'] ?? '') === 'DOCUMENT') {
 
                 $documentLink =
-                    $request->header_document
+                    $template->media_url
                     ?? ($header['example']['header_handle'][0] ?? null);
 
                 if ($documentLink) {
