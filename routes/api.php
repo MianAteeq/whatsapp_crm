@@ -158,11 +158,45 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::post(
 
-    'campaigns',
+        'campaigns',
 
-    [CampaignController::class, 'store']
+        [CampaignController::class, 'store']
 
-);
+    );
+
+    Route::get(
+
+        'campaigns/dashboard',
+
+        [CampaignController::class, 'dashboard']
+
+    );
+
+    Route::get(
+
+        'campaign/list',
+
+        [CampaignController::class, 'index']
+
+    );
+
+    Route::get(
+
+        'campaigns/{id}',
+
+        [CampaignController::class, 'show']
+
+    );
+
+    Route::delete(
+
+        'campaigns/{id}',
+
+        [CampaignController::class, 'destroy']
+
+    );
+
+    
 });
 
 // ============================================

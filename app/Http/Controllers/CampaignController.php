@@ -274,4 +274,313 @@ class CampaignController extends Controller
             ], 500);
         }
     }
+
+    public function dashboard()
+    {
+
+        $tenantId = auth()->user()->tenant_id;
+
+
+
+        // ==========================================
+        // ACTIVE CAMPAIGNS
+        // ==========================================
+
+        $activeCampaigns = Campaign::where(
+
+            'tenant_id',
+
+            $tenantId
+
+        )
+
+            ->whereIn('status', [
+
+                'running',
+
+                'queued',
+
+                'scheduled'
+
+            ])
+
+            ->count();
+
+
+
+        // ==========================================
+        // TOTAL MESSAGES
+        // ==========================================
+
+        $totalMessages = Campaign::where(
+
+            'tenant_id',
+
+            $tenantId
+
+        )->sum('sent_count');
+
+
+
+        // ==========================================
+        // TOTAL DELIVERED
+        // ==========================================
+
+        $totalDelivered = Campaign::where(
+
+            'tenant_id',
+
+            $tenantId
+
+        )->sum('delivered_count');
+
+
+
+        // ==========================================
+        // REACH RATE
+        // ==========================================
+
+        $reachRate = 0;
+
+
+
+        if ($totalMessages > 0) {
+
+            $reachRate = round(
+
+                ($totalDelivered / $totalMessages) * 100,
+
+                2
+
+            );
+        }
+
+
+
+        return response()->json([
+
+            'success' => true,
+
+            'data' => [
+
+                'active_campaigns' => $activeCampaigns,
+
+                'total_messages' => $totalMessages,
+
+                'reach_rate' => $reachRate
+
+            ]
+
+        ]);
+    }
+
+    public function index(Request $request)
+    {
+
+        $campaigns = Campaign::where(
+
+            'tenant_id',
+
+            auth()->user()->tenant_id
+
+        );
+
+
+
+        // ==========================================
+        // SEARCH
+        // ==========================================
+
+        if ($request->search) {
+
+            $campaigns->where(
+
+                'name',
+
+                'like',
+
+                '%' . $request->search . '%'
+
+            );
+        }
+
+
+
+        // ==========================================
+        // STATUS FILTER
+        // ==========================================
+
+        if ($request->status) {
+
+            $campaigns->where(
+
+                'status',
+
+                $request->status
+
+            );
+        }
+
+
+
+        // ==========================================
+        // TYPE FILTER
+        // ==========================================
+
+        if ($request->type) {
+
+            $campaigns->where(
+
+                'type',
+
+                $request->type
+
+            );
+        }
+
+
+
+        // ==========================================
+        // PAGINATION
+        // ==========================================
+
+        $campaigns = $campaigns
+
+            ->latest()
+
+            ->paginate(20);
+
+
+
+        // ==========================================
+        // TRANSFORM
+        // ==========================================
+
+        $campaigns->getCollection()->transform(
+
+            function ($campaign) {
+
+                $deliveryRate = 0;
+
+                $readRate = 0;
+
+
+
+                if ($campaign->sent_count > 0) {
+
+                    $deliveryRate = round(
+
+                        (
+
+                            $campaign->delivered_count
+
+                            /
+
+                            $campaign->sent_count
+
+                        ) * 100,
+
+                        2
+
+                    );
+                }
+
+
+
+                if ($campaign->delivered_count > 0) {
+
+                    $readRate = round(
+
+                        (
+
+                            $campaign->read_count
+
+                            /
+
+                            $campaign->delivered_count
+
+                        ) * 100,
+
+                        2
+
+                    );
+                }
+
+
+
+                return [
+
+                    'id' => $campaign->id,
+
+                    'name' => $campaign->name,
+
+                    'type' => $campaign->type,
+
+                    'status' => $campaign->status,
+
+                    'total_contacts' => $campaign->total_contacts,
+
+                    'sent_count' => $campaign->sent_count,
+
+                    'delivered_count' => $campaign->delivered_count,
+
+                    'read_count' => $campaign->read_count,
+
+                    'failed_count' => $campaign->failed_count,
+
+                    'delivery_rate' => $deliveryRate,
+
+                    'read_rate' => $readRate,
+
+                    'scheduled_at' => $campaign->scheduled_at,
+
+                    'created_at' => $campaign->created_at
+
+                ];
+            }
+
+        );
+
+
+
+        return response()->json([
+
+            'success' => true,
+
+            'data' => $campaigns
+
+        ]);
+    }
+
+    public function show($id)
+    {
+
+        $campaign = Campaign::with([
+
+            'template',
+
+            'campaignContacts.contact'
+
+        ])
+
+            ->where(
+
+                'tenant_id',
+
+                auth()->user()->tenant_id
+
+            )
+
+            ->findOrFail($id);
+
+
+
+        return response()->json([
+
+            'success' => true,
+
+            'data' => $campaign
+
+        ]);
+    }
 }
