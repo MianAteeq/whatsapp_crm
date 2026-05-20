@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\WhatsappMessageController;
 use App\Http\Controllers\Api\WhatsappSettingController;
 use App\Http\Controllers\Api\WhatsappTemplateController;
 use App\Http\Controllers\Api\WhatsappWebhookController;
+use App\Http\Controllers\CampaignController;
 use Illuminate\Support\Facades\Route;
 
 // ============================================
@@ -152,6 +153,16 @@ Route::middleware('auth:sanctum')->group(function () {
         '/whatsapp/performance-insights',
         [WhatsappTemplateController::class, 'performanceInsights']
     );
+
+    // Campaign routes (Bonus Challenge)
+
+    Route::post(
+
+    'campaigns',
+
+    [CampaignController::class, 'store']
+
+);
 });
 
 // ============================================

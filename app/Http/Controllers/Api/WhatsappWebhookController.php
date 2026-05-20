@@ -2,12 +2,17 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\CampaignUpdated;
 use App\Events\MessageReceived;
+use App\Events\MessageStatusUpdated;
 use App\Http\Controllers\Controller;
+use App\Models\Campaign;
+use App\Models\CampaignContact;
 use App\Models\Contact;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\WhatsappSetting;
+use App\Models\WhatsappTemplate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -18,27 +23,27 @@ class WhatsappWebhookController extends Controller
     // VERIFY WEBHOOK
     // ==========================================
 
-public function verify(Request $request)
-{
-    $verify_token = env('WHATSAPP_WEBHOOK_VERIFY_TOKEN');
+    public function verify(Request $request)
+    {
+        $verify_token = env('WHATSAPP_WEBHOOK_VERIFY_TOKEN');
 
-    $mode = $request->query('hub_mode');
-    $token = $request->query('hub_verify_token');
-    $challenge = $request->query('hub_challenge');
+        $mode = $request->query('hub_mode');
+        $token = $request->query('hub_verify_token');
+        $challenge = $request->query('hub_challenge');
 
-    if (
-        $mode === 'subscribe' &&
-        $token === $verify_token
-    ) {
-        return response($challenge, 200)
-            ->header('Content-Type', 'text/plain');
+        if (
+            $mode === 'subscribe' &&
+            $token === $verify_token
+        ) {
+            return response($challenge, 200)
+                ->header('Content-Type', 'text/plain');
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Invalid verification token'
+        ], 403);
     }
-
-    return response()->json([
-        'success' => false,
-        'message' => 'Invalid verification token'
-    ], 403);
-}
 
 
 
@@ -46,6 +51,455 @@ public function verify(Request $request)
     // ==========================================
     // RECEIVE EVENTS
     // ==========================================
+
+    // public function handle(Request $request)
+    // {
+
+    //     \Log::info('WhatsApp Webhook:', $request->all());
+
+
+
+    //     // ==========================================
+    //     // GET ENTRY
+    //     // ==========================================
+
+    //     $entry = $request->entry[0] ?? null;
+
+    //     if (!$entry) {
+
+    //         return response()->json([
+    //             'success' => false
+    //         ]);
+    //     }
+
+
+
+    //     // ==========================================
+    //     // GET CHANGE
+    //     // ==========================================
+
+    //     $change = $entry['changes'][0] ?? null;
+
+    //     if (!$change) {
+
+    //         return response()->json([
+    //             'success' => false
+    //         ]);
+    //     }
+
+
+
+    //     $value = $change['value'] ?? [];
+
+
+
+    //     // ==========================================
+    //     // PHONE NUMBER ID
+    //     // ==========================================
+
+    //     $phoneNumberId = $value['metadata']['phone_number_id'] ?? null;
+
+
+
+    //     // ==========================================
+    //     // FIND TENANT
+    //     // ==========================================
+
+    //     $setting = WhatsappSetting::where(
+    //         'phone_number_id',
+    //         $phoneNumberId
+    //     )->first();
+
+
+
+    //     if (!$setting) {
+
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Tenant not found'
+    //         ]);
+    //     }
+
+
+
+    //     // ==========================================
+    //     // INCOMING MESSAGES
+    //     // ==========================================
+
+    //     if (isset($value['messages'])) {
+
+    //         foreach ($value['messages'] as $incomingMessage) {
+
+    //             // ======================================
+    //             // MESSAGE TYPE
+    //             // ======================================
+
+    //             $messageType = $incomingMessage['type'] ?? 'text';
+
+
+
+    //             // ======================================
+    //             // DEFAULT VALUES
+    //             // ======================================
+
+    //             $messageText = null;
+
+    //             $mediaId = null;
+
+    //             $mimeType = null;
+
+    //             $fileName = null;
+
+    //             $mediaUrl = null;
+
+
+
+    //             // ======================================
+    //             // HANDLE TEXT
+    //             // ======================================
+
+    //             if ($messageType === 'text') {
+
+    //                 $messageText = $incomingMessage['text']['body'] ?? '';
+    //             }
+
+
+
+    //             // ======================================
+    //             // HANDLE IMAGE
+    //             // ======================================
+
+    //             elseif ($messageType === 'image') {
+
+    //                 $mediaId = $incomingMessage['image']['id'] ?? null;
+
+    //                 $mimeType = $incomingMessage['image']['mime_type'] ?? null;
+
+    //                 $messageText = '📷 Image';
+    //             }
+
+
+
+    //             // ======================================
+    //             // HANDLE DOCUMENT
+    //             // ======================================
+
+    //             elseif ($messageType === 'document') {
+
+    //                 $mediaId = $incomingMessage['document']['id'] ?? null;
+
+    //                 $mimeType = $incomingMessage['document']['mime_type'] ?? null;
+
+    //                 $fileName = $incomingMessage['document']['filename'] ?? null;
+
+    //                 $messageText = '📄 Document';
+    //             }
+
+
+
+    //             // ======================================
+    //             // HANDLE VIDEO
+    //             // ======================================
+
+    //             elseif ($messageType === 'video') {
+
+    //                 $mediaId = $incomingMessage['video']['id'] ?? null;
+
+    //                 $mimeType = $incomingMessage['video']['mime_type'] ?? null;
+
+    //                 $messageText = '🎥 Video';
+    //             }
+
+
+
+    //             // ======================================
+    //             // HANDLE AUDIO
+    //             // ======================================
+
+    //             elseif ($messageType === 'audio') {
+
+    //                 $mediaId = $incomingMessage['audio']['id'] ?? null;
+
+    //                 $mimeType = $incomingMessage['audio']['mime_type'] ?? null;
+
+    //                 $messageText = '🎵 Audio';
+    //             }
+
+
+
+    //             // ======================================
+    //             // DOWNLOAD MEDIA FROM META
+    //             // ======================================
+
+    //             if ($mediaId) {
+
+    //                 // ======================================
+    //                 // GET MEDIA INFO
+    //                 // ======================================
+
+    //                 $mediaResponse = Http::withToken(
+
+    //                     $setting->access_token
+
+    //                 )
+
+    //                     ->get(
+
+    //                         "https://graph.facebook.com/v19.0/{$mediaId}"
+
+    //                     )
+
+    //                     ->json();
+
+
+
+    //                 // ======================================
+    //                 // TEMP MEDIA URL
+    //                 // ======================================
+
+    //                 $tempMediaUrl = $mediaResponse['url'] ?? null;
+
+
+
+    //                 // ======================================
+    //                 // DOWNLOAD FILE
+    //                 // ======================================
+
+    //                 if ($tempMediaUrl) {
+
+    //                     $mediaContent = Http::withToken(
+
+    //                         $setting->access_token
+
+    //                     )
+
+    //                         ->get($tempMediaUrl)
+
+    //                         ->body();
+
+
+
+    //                     // ======================================
+    //                     // FILE EXTENSION
+    //                     // ======================================
+
+    //                     $extension = match ($mimeType) {
+
+    //                         'image/jpeg' => 'jpg',
+
+    //                         'image/png' => 'png',
+
+    //                         'video/mp4' => 'mp4',
+
+    //                         'audio/ogg' => 'ogg',
+
+    //                         'application/pdf' => 'pdf',
+
+    //                         default => 'bin'
+    //                     };
+
+
+
+    //                     // ======================================
+    //                     // FILE NAME
+    //                     // ======================================
+
+    //                     $storedFileName =
+
+    //                         'whatsapp-media/' .
+
+    //                         time() .
+
+    //                         '_' .
+
+    //                         uniqid() .
+
+    //                         '.' .
+
+    //                         $extension;
+
+
+
+    //                     // ======================================
+    //                     // STORE FILE
+    //                     // ======================================
+
+    //                     Storage::disk('public')->put(
+
+    //                         $storedFileName,
+
+    //                         $mediaContent
+
+    //                     );
+
+
+
+    //                     // ======================================
+    //                     // PERMANENT URL
+    //                     // ======================================
+
+    //                     $mediaUrl = asset(
+
+    //                         'storage/' . $storedFileName
+
+    //                     );
+    //                 }
+    //             }
+
+
+
+    //             // ======================================
+    //             // CONTACT INFO
+    //             // ======================================
+
+    //             $waId = $incomingMessage['from'];
+
+
+
+    //             // ======================================
+    //             // FIND CONTACT
+    //             // ======================================
+
+    //             $contact = Contact::firstOrCreate(
+
+    //                 [
+
+    //                     'tenant_id' => $setting->tenant_id,
+
+    //                     'phone' => $waId
+
+    //                 ],
+
+    //                 [
+
+    //                     'name' => $waId
+
+    //                 ]
+
+    //             );
+
+
+
+    //             // ======================================
+    //             // FIND OR CREATE CONVERSATION
+    //             // ======================================
+
+    //             $conversation = Conversation::firstOrCreate(
+
+    //                 [
+
+    //                     'tenant_id' => $setting->tenant_id,
+
+    //                     'contact_id' => $contact->id
+
+    //                 ],
+
+    //                 [
+
+    //                     'wa_id' => $waId
+
+    //                 ]
+
+    //             );
+
+
+
+    //             // ======================================
+    //             // STORE MESSAGE
+    //             // ======================================
+
+    //             $message = Message::create([
+
+    //                 'tenant_id' => $setting->tenant_id,
+
+    //                 'conversation_id' => $conversation->id,
+
+    //                 'message_id' => $incomingMessage['id'] ?? null,
+
+    //                 'direction' => 'incoming',
+
+    //                 'message' => $messageText,
+
+    //                 'type' => $messageType,
+
+    //                 'status' => 'received',
+
+    //                 'media_url' => $mediaUrl,
+
+    //                 'media_type' => $messageType,
+
+    //                 'mime_type' => $mimeType,
+
+    //                 'file_name' => $fileName,
+
+    //                 'payload' => $incomingMessage
+
+    //             ]);
+
+
+
+    //             // ======================================
+    //             // UPDATE CONVERSATION
+    //             // ======================================
+
+    //             $conversation->update([
+
+    //                 'last_message' => $messageText,
+
+    //                 'last_message_at' => now(),
+
+    //                 'unread_count' => $conversation->unread_count + 1
+
+    //             ]);
+
+
+
+    //             // ======================================
+    //             // REALTIME BROADCAST
+    //             // ======================================
+
+    //             broadcast(
+
+    //                 new MessageReceived($message)
+
+    //             )->toOthers();
+    //         }
+    //     }
+
+
+
+    //     // ==========================================
+    //     // MESSAGE STATUS
+    //     // ==========================================
+
+    //     if (isset($value['statuses'])) {
+
+    //         foreach ($value['statuses'] as $status) {
+
+    //             Message::where(
+
+    //                 'message_id',
+
+    //                 $status['id']
+
+    //             )->update([
+
+    //                 'status' => $status['status']
+
+    //             ]);
+    //         }
+    //     }
+
+
+
+
+
+    //     return response()->json([
+
+    //         'success' => true
+
+    //     ]);
+    // }
 
     public function handle(Request $request)
     {
@@ -63,7 +517,11 @@ public function verify(Request $request)
         if (!$entry) {
 
             return response()->json([
-                'success' => false
+
+                'success' => false,
+
+                'message' => 'Entry not found'
+
             ]);
         }
 
@@ -78,11 +536,19 @@ public function verify(Request $request)
         if (!$change) {
 
             return response()->json([
-                'success' => false
+
+                'success' => false,
+
+                'message' => 'Change not found'
+
             ]);
         }
 
 
+
+        // ==========================================
+        // VALUE
+        // ==========================================
 
         $value = $change['value'] ?? [];
 
@@ -101,8 +567,11 @@ public function verify(Request $request)
         // ==========================================
 
         $setting = WhatsappSetting::where(
+
             'phone_number_id',
+
             $phoneNumberId
+
         )->first();
 
 
@@ -110,9 +579,40 @@ public function verify(Request $request)
         if (!$setting) {
 
             return response()->json([
+
                 'success' => false,
+
                 'message' => 'Tenant not found'
+
             ]);
+        }
+
+
+
+        // ==========================================
+        // CONTACT PROFILES
+        // ==========================================
+
+        $contactProfiles = [];
+
+
+
+        if (isset($value['contacts'])) {
+
+            foreach ($value['contacts'] as $contactData) {
+
+                $waId = $contactData['wa_id'] ?? null;
+
+                $profileName =
+
+                    $contactData['profile']['name']
+
+                    ?? $waId;
+
+
+
+                $contactProfiles[$waId] = $profileName;
+            }
         }
 
 
@@ -125,369 +625,941 @@ public function verify(Request $request)
 
             foreach ($value['messages'] as $incomingMessage) {
 
-                // ======================================
-                // MESSAGE TYPE
-                // ======================================
-
-                $messageType = $incomingMessage['type'] ?? 'text';
-
-
-
-                // ======================================
-                // DEFAULT VALUES
-                // ======================================
-
-                $messageText = null;
-
-                $mediaId = null;
-
-                $mimeType = null;
-
-                $fileName = null;
-
-                $mediaUrl = null;
-
-
-
-                // ======================================
-                // HANDLE TEXT
-                // ======================================
-
-                if ($messageType === 'text') {
-
-                    $messageText = $incomingMessage['text']['body'] ?? '';
-                }
-
-
-
-                // ======================================
-                // HANDLE IMAGE
-                // ======================================
-
-                elseif ($messageType === 'image') {
-
-                    $mediaId = $incomingMessage['image']['id'] ?? null;
-
-                    $mimeType = $incomingMessage['image']['mime_type'] ?? null;
-
-                    $messageText = '📷 Image';
-                }
-
-
-
-                // ======================================
-                // HANDLE DOCUMENT
-                // ======================================
-
-                elseif ($messageType === 'document') {
-
-                    $mediaId = $incomingMessage['document']['id'] ?? null;
-
-                    $mimeType = $incomingMessage['document']['mime_type'] ?? null;
-
-                    $fileName = $incomingMessage['document']['filename'] ?? null;
-
-                    $messageText = '📄 Document';
-                }
-
-
-
-                // ======================================
-                // HANDLE VIDEO
-                // ======================================
-
-                elseif ($messageType === 'video') {
-
-                    $mediaId = $incomingMessage['video']['id'] ?? null;
-
-                    $mimeType = $incomingMessage['video']['mime_type'] ?? null;
-
-                    $messageText = '🎥 Video';
-                }
-
-
-
-                // ======================================
-                // HANDLE AUDIO
-                // ======================================
-
-                elseif ($messageType === 'audio') {
-
-                    $mediaId = $incomingMessage['audio']['id'] ?? null;
-
-                    $mimeType = $incomingMessage['audio']['mime_type'] ?? null;
-
-                    $messageText = '🎵 Audio';
-                }
-
-
-
-                // ======================================
-                // DOWNLOAD MEDIA FROM META
-                // ======================================
-
-                if ($mediaId) {
+                try {
 
                     // ======================================
-                    // GET MEDIA INFO
+                    // DUPLICATE CHECK
                     // ======================================
 
-                    $mediaResponse = Http::withToken(
+                    $alreadyExists = Message::where(
 
-                        $setting->access_token
+                        'message_id',
 
-                    )
+                        $incomingMessage['id'] ?? null
 
-                        ->get(
+                    )->exists();
 
-                            "https://graph.facebook.com/v19.0/{$mediaId}"
 
-                        )
 
-                        ->json();
+                    if ($alreadyExists) {
+
+                        continue;
+                    }
 
 
 
                     // ======================================
-                    // TEMP MEDIA URL
+                    // MESSAGE TYPE
                     // ======================================
 
-                    $tempMediaUrl = $mediaResponse['url'] ?? null;
+                    $messageType =
+
+                        $incomingMessage['type']
+
+                        ?? 'text';
 
 
 
                     // ======================================
-                    // DOWNLOAD FILE
+                    // DEFAULT VALUES
                     // ======================================
 
-                    if ($tempMediaUrl) {
+                    $messageText = null;
 
-                        $mediaContent = Http::withToken(
+                    $mediaId = null;
+
+                    $mimeType = null;
+
+                    $fileName = null;
+
+                    $mediaUrl = null;
+
+                    $payload = $incomingMessage;
+
+
+
+                    // ======================================
+                    // TEXT MESSAGE
+                    // ======================================
+
+                    if ($messageType === 'text') {
+
+                        $messageText =
+
+                            $incomingMessage['text']['body']
+
+                            ?? '';
+                    }
+
+
+
+                    // ======================================
+                    // IMAGE
+                    // ======================================
+
+                    elseif ($messageType === 'image') {
+
+                        $mediaId =
+
+                            $incomingMessage['image']['id']
+
+                            ?? null;
+
+
+
+                        $mimeType =
+
+                            $incomingMessage['image']['mime_type']
+
+                            ?? null;
+
+
+
+                        $messageText = '📷 Image';
+                    }
+
+
+
+                    // ======================================
+                    // VIDEO
+                    // ======================================
+
+                    elseif ($messageType === 'video') {
+
+                        $mediaId =
+
+                            $incomingMessage['video']['id']
+
+                            ?? null;
+
+
+
+                        $mimeType =
+
+                            $incomingMessage['video']['mime_type']
+
+                            ?? null;
+
+
+
+                        $messageText = '🎥 Video';
+                    }
+
+
+
+                    // ======================================
+                    // AUDIO
+                    // ======================================
+
+                    elseif ($messageType === 'audio') {
+
+                        $mediaId =
+
+                            $incomingMessage['audio']['id']
+
+                            ?? null;
+
+
+
+                        $mimeType =
+
+                            $incomingMessage['audio']['mime_type']
+
+                            ?? null;
+
+
+
+                        $messageText = '🎵 Audio';
+                    }
+
+
+
+                    // ======================================
+                    // DOCUMENT
+                    // ======================================
+
+                    elseif ($messageType === 'document') {
+
+                        $mediaId =
+
+                            $incomingMessage['document']['id']
+
+                            ?? null;
+
+
+
+                        $mimeType =
+
+                            $incomingMessage['document']['mime_type']
+
+                            ?? null;
+
+
+
+                        $fileName =
+
+                            $incomingMessage['document']['filename']
+
+                            ?? null;
+
+
+
+                        $messageText = '📄 Document';
+                    }
+
+
+
+                    // ======================================
+                    // REACTION
+                    // ======================================
+
+                    elseif ($messageType === 'reaction') {
+
+                        $emoji =
+
+                            $incomingMessage['reaction']['emoji']
+
+                            ?? '👍';
+
+
+
+                        $messageText =
+
+                            'Reaction: ' . $emoji;
+                    }
+
+
+
+                    // ======================================
+                    // LOCATION
+                    // ======================================
+
+                    elseif ($messageType === 'location') {
+
+                        $latitude =
+
+                            $incomingMessage['location']['latitude']
+
+                            ?? null;
+
+
+
+                        $longitude =
+
+                            $incomingMessage['location']['longitude']
+
+                            ?? null;
+
+
+
+                        $messageText =
+
+                            '📍 Location: '
+
+                            . $latitude
+
+                            . ', '
+
+                            . $longitude;
+                    }
+
+
+
+                    // ======================================
+                    // CONTACT CARD
+                    // ======================================
+
+                    elseif ($messageType === 'contacts') {
+
+                        $messageText =
+
+                            '👤 Shared Contact';
+                    }
+
+
+
+                    // ======================================
+                    // DOWNLOAD MEDIA
+                    // ======================================
+
+                    if ($mediaId) {
+
+                        // ======================================
+                        // GET MEDIA INFO
+                        // ======================================
+
+                        $mediaResponse = Http::withToken(
 
                             $setting->access_token
 
                         )
 
-                            ->get($tempMediaUrl)
+                            ->get(
 
-                            ->body();
+                                "https://graph.facebook.com/v19.0/{$mediaId}"
+
+                            )
+
+                            ->json();
 
 
 
-                        // ======================================
-                        // FILE EXTENSION
-                        // ======================================
+                        $tempMediaUrl =
 
-                        $extension = match ($mimeType) {
+                            $mediaResponse['url']
 
-                            'image/jpeg' => 'jpg',
-
-                            'image/png' => 'png',
-
-                            'video/mp4' => 'mp4',
-
-                            'audio/ogg' => 'ogg',
-
-                            'application/pdf' => 'pdf',
-
-                            default => 'bin'
-                        };
+                            ?? null;
 
 
 
                         // ======================================
-                        // FILE NAME
+                        // DOWNLOAD FILE
                         // ======================================
 
-                        $storedFileName =
+                        if ($tempMediaUrl) {
 
-                            'whatsapp-media/' .
+                            $mediaContent = Http::withToken(
 
-                            time() .
+                                $setting->access_token
 
-                            '_' .
+                            )
 
-                            uniqid() .
+                                ->get($tempMediaUrl)
 
-                            '.' .
-
-                            $extension;
+                                ->body();
 
 
 
-                        // ======================================
-                        // STORE FILE
-                        // ======================================
+                            // ======================================
+                            // EXTENSION
+                            // ======================================
 
-                        Storage::disk('public')->put(
+                            $extension = match ($mimeType) {
 
-                            $storedFileName,
+                                'image/jpeg' => 'jpg',
 
-                            $mediaContent
+                                'image/png' => 'png',
 
-                        );
+                                'image/webp' => 'webp',
+
+                                'video/mp4' => 'mp4',
+
+                                'audio/ogg' => 'ogg',
+
+                                'audio/mpeg' => 'mp3',
+
+                                'application/pdf' => 'pdf',
+
+                                default => 'bin'
+                            };
 
 
 
-                        // ======================================
-                        // PERMANENT URL
-                        // ======================================
+                            // ======================================
+                            // FILE NAME
+                            // ======================================
 
-                        $mediaUrl = asset(
+                            $storedFileName =
 
-                            'storage/' . $storedFileName
+                                'whatsapp-media/' .
 
-                        );
+                                time() .
+
+                                '_' .
+
+                                uniqid() .
+
+                                '.' .
+
+                                $extension;
+
+
+
+                            // ======================================
+                            // STORE FILE
+                            // ======================================
+
+                            Storage::disk('public')->put(
+
+                                $storedFileName,
+
+                                $mediaContent
+
+                            );
+
+
+
+                            // ======================================
+                            // FINAL URL
+                            // ======================================
+
+                            $mediaUrl = asset(
+
+                                'storage/' . $storedFileName
+
+                            );
+                        }
                     }
+
+
+
+                    // ======================================
+                    // WHATSAPP USER
+                    // ======================================
+
+                    $waId =
+
+                        $incomingMessage['from']
+
+                        ?? null;
+
+
+
+                    // ======================================
+                    // PROFILE NAME
+                    // ======================================
+
+                    $profileName =
+
+                        $contactProfiles[$waId]
+
+                        ?? $waId;
+
+
+
+                    // ======================================
+                    // FIND CONTACT
+                    // ======================================
+
+                    $contact = Contact::firstOrCreate(
+
+                        [
+
+                            'tenant_id' => $setting->tenant_id,
+
+                            'phone' => $waId
+
+                        ],
+
+                        [
+
+                            'name' => $profileName
+
+                        ]
+
+                    );
+
+
+
+                    // ======================================
+                    // UPDATE NAME
+                    // ======================================
+
+                    if (
+
+                        $profileName
+
+                        &&
+
+                        $contact->name !== $profileName
+
+                    ) {
+
+                        $contact->update([
+
+                            'name' => $profileName
+
+                        ]);
+                    }
+
+
+
+                    // ======================================
+                    // CONVERSATION
+                    // ======================================
+
+                    $conversation = Conversation::firstOrCreate(
+
+                        [
+
+                            'tenant_id' => $setting->tenant_id,
+
+                            'contact_id' => $contact->id
+
+                        ],
+
+                        [
+
+                            'wa_id' => $waId,
+
+                            'last_message' => '',
+
+                            'last_message_at' => now(),
+
+                            'unread_count' => 0
+
+                        ]
+
+                    );
+
+
+
+                    // ======================================
+                    // STORE MESSAGE
+                    // ======================================
+
+                    $message = Message::create([
+
+                        'tenant_id' => $setting->tenant_id,
+
+                        'conversation_id' => $conversation->id,
+
+                        'message_id' => $incomingMessage['id'] ?? null,
+
+                        'direction' => 'incoming',
+
+                        'message' => $messageText,
+
+                        'type' => $messageType,
+
+                        'status' => 'received',
+
+                        'media_url' => $mediaUrl,
+
+                        'media_type' => $messageType,
+
+                        'mime_type' => $mimeType,
+
+                        'file_name' => $fileName,
+
+                        'payload' => $payload
+
+                    ]);
+
+
+
+                    // ======================================
+                    // UPDATE CONVERSATION
+                    // ======================================
+
+                    $conversation->update([
+
+                        'last_message' => $messageText,
+
+                        'last_message_at' => now(),
+
+                        'unread_count' =>
+
+                        $conversation->unread_count + 1
+
+                    ]);
+
+
+
+                    // ======================================
+                    // REALTIME EVENT
+                    // ======================================
+
+                    broadcast(
+
+                        new MessageReceived($message)
+
+                    )->toOthers();
+                } catch (\Exception $e) {
+
+                    \Log::error(
+
+                        'Webhook Incoming Message Error',
+
+                        [
+
+                            'error' => $e->getMessage(),
+
+                            'payload' => $incomingMessage
+
+                        ]
+
+                    );
                 }
-
-
-
-                // ======================================
-                // CONTACT INFO
-                // ======================================
-
-                $waId = $incomingMessage['from'];
-
-
-
-                // ======================================
-                // FIND CONTACT
-                // ======================================
-
-                $contact = Contact::firstOrCreate(
-
-                    [
-
-                        'tenant_id' => $setting->tenant_id,
-
-                        'phone' => $waId
-
-                    ],
-
-                    [
-
-                        'name' => $waId
-
-                    ]
-
-                );
-
-
-
-                // ======================================
-                // FIND OR CREATE CONVERSATION
-                // ======================================
-
-                $conversation = Conversation::firstOrCreate(
-
-                    [
-
-                        'tenant_id' => $setting->tenant_id,
-
-                        'contact_id' => $contact->id
-
-                    ],
-
-                    [
-
-                        'wa_id' => $waId
-
-                    ]
-
-                );
-
-
-
-                // ======================================
-                // STORE MESSAGE
-                // ======================================
-
-                $message = Message::create([
-
-                    'tenant_id' => $setting->tenant_id,
-
-                    'conversation_id' => $conversation->id,
-
-                    'message_id' => $incomingMessage['id'] ?? null,
-
-                    'direction' => 'incoming',
-
-                    'message' => $messageText,
-
-                    'type' => $messageType,
-
-                    'status' => 'received',
-
-                    'media_url' => $mediaUrl,
-
-                    'media_type' => $messageType,
-
-                    'mime_type' => $mimeType,
-
-                    'file_name' => $fileName,
-
-                    'payload' => $incomingMessage
-
-                ]);
-
-
-
-                // ======================================
-                // UPDATE CONVERSATION
-                // ======================================
-
-                $conversation->update([
-
-                    'last_message' => $messageText,
-
-                    'last_message_at' => now(),
-
-                    'unread_count' => $conversation->unread_count + 1
-
-                ]);
-
-
-
-                // ======================================
-                // REALTIME BROADCAST
-                // ======================================
-
-                broadcast(
-
-                    new MessageReceived($message)
-
-                )->toOthers();
             }
         }
 
 
 
         // ==========================================
-        // MESSAGE STATUS
+        // MESSAGE STATUSES
         // ==========================================
 
         if (isset($value['statuses'])) {
 
             foreach ($value['statuses'] as $status) {
 
-                Message::where(
+                try {
 
-                    'message_id',
+                    // ======================================
+                    // STATUS DATA
+                    // ======================================
 
-                    $status['id']
+                    $messageId =
 
-                )->update([
+                        $status['id']
 
-                    'status' => $status['status']
+                        ?? null;
 
-                ]);
+
+
+                    $messageStatus =
+
+                        $status['status']
+
+                        ?? null;
+
+
+
+                    // ======================================
+                    // FIND MESSAGE
+                    // ======================================
+
+                    $message = Message::where(
+
+                        'message_id',
+
+                        $messageId
+
+                    )->first();
+
+
+
+                    if (!$message) {
+
+                        continue;
+                    }
+
+
+
+                    // ======================================
+                    // UPDATE MESSAGE STATUS
+                    // ======================================
+
+                    $message->update([
+
+                        'status' => $messageStatus
+
+                    ]);
+
+
+
+                    // ======================================
+                    // READ TIME
+                    // ======================================
+
+                    if ($messageStatus === 'read') {
+
+                        $message->update([
+
+                            'read_at' => now()
+
+                        ]);
+                    }
+
+
+
+                    // ======================================
+                    // CAMPAIGN CONTACT
+                    // ======================================
+
+                    if ($message->is_campaign) {
+
+                        // ======================================
+                        // FIND CAMPAIGN CONTACT
+                        // ======================================
+
+                        $campaignContact = CampaignContact::where(
+
+                            'message_id',
+
+                            $messageId
+
+                        )->first();
+
+
+
+                        if ($campaignContact) {
+
+                            // ======================================
+                            // PREVIOUS STATUS
+                            // ======================================
+
+                            $previousStatus = $campaignContact->status;
+
+
+
+                            // ======================================
+                            // UPDATE CONTACT STATUS
+                            // ======================================
+
+                            $campaignContact->update([
+
+                                'status' => $messageStatus
+
+                            ]);
+
+
+
+                            // ======================================
+                            // FIND CAMPAIGN
+                            // ======================================
+
+                            $campaign = Campaign::find(
+
+                                $campaignContact->campaign_id
+
+                            );
+
+
+
+                            if ($campaign) {
+
+                                // ======================================
+                                // DELIVERED
+                                // ======================================
+
+                                if (
+
+                                    $messageStatus === 'delivered'
+
+                                    &&
+
+                                    $previousStatus !== 'delivered'
+
+                                ) {
+
+                                    $campaignContact->update([
+
+                                        'delivered_at' => now()
+
+                                    ]);
+
+
+
+                                    $campaign->increment(
+
+                                        'delivered_count'
+
+                                    );
+                                }
+
+
+
+                                // ======================================
+                                // READ
+                                // ======================================
+
+                                if (
+
+                                    $messageStatus === 'read'
+
+                                    &&
+
+                                    $previousStatus !== 'read'
+
+                                ) {
+
+                                    $campaignContact->update([
+
+                                        'read_at' => now()
+
+                                    ]);
+
+
+
+                                    $campaign->increment(
+
+                                        'read_count'
+
+                                    );
+                                }
+
+
+
+                                // ======================================
+                                // FAILED
+                                // ======================================
+
+                                if (
+
+                                    $messageStatus === 'failed'
+
+                                    &&
+
+                                    $previousStatus !== 'failed'
+
+                                ) {
+
+                                    $campaign->increment(
+
+                                        'failed_count'
+
+                                    );
+                                }
+
+
+
+                                // ======================================
+                                // DELIVERY RATE
+                                // ======================================
+
+                                $deliveryRate = 0;
+
+
+
+                                if ($campaign->sent_count > 0) {
+
+                                    $deliveryRate = round(
+
+                                        (
+
+                                            $campaign->delivered_count
+
+                                            /
+
+                                            $campaign->sent_count
+
+                                        ) * 100,
+
+                                        2
+
+                                    );
+                                }
+
+
+
+                                // ======================================
+                                // READ RATE
+                                // ======================================
+
+                                $readRate = 0;
+
+
+
+                                if ($campaign->delivered_count > 0) {
+
+                                    $readRate = round(
+
+                                        (
+
+                                            $campaign->read_count
+
+                                            /
+
+                                            $campaign->delivered_count
+
+                                        ) * 100,
+
+                                        2
+
+                                    );
+                                }
+
+
+
+                                // ======================================
+                                // REFRESH CAMPAIGN
+                                // ======================================
+
+                                $campaign->refresh();
+
+
+
+                                // ======================================
+                                // REALTIME CAMPAIGN EVENT
+                                // ======================================
+
+                                broadcast(
+
+                                    new CampaignUpdated([
+
+                                        'campaign' => $campaign,
+
+                                        'delivery_rate' => $deliveryRate,
+
+                                        'read_rate' => $readRate
+
+                                    ])
+
+                                )->toOthers();
+                            }
+                        }
+                    }
+
+
+
+                    // ======================================
+                    // REALTIME MESSAGE STATUS
+                    // ======================================
+
+                    broadcast(
+
+                        new MessageStatusUpdated($message)
+
+                    )->toOthers();
+                } catch (\Exception $e) {
+
+                    \Log::error(
+
+                        'Webhook Status Error',
+
+                        [
+
+                            'error' => $e->getMessage(),
+
+                            'payload' => $status
+
+                        ]
+
+                    );
+                }
             }
         }
 
 
 
+        // ==========================================
+        // TEMPLATE STATUS UPDATE
+        // ==========================================
 
+        if (
+
+            isset($value['message_template_id'])
+
+            &&
+
+            isset($value['event'])
+
+        ) {
+
+            WhatsappTemplate::where(
+
+                'template_id',
+
+                $value['message_template_id']
+
+            )->update([
+
+                'status' => strtoupper(
+
+                    $value['event']
+
+                )
+
+            ]);
+        }
+
+
+
+        // ==========================================
+        // FINAL RESPONSE
+        // ==========================================
 
         return response()->json([
 

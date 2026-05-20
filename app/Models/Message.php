@@ -20,7 +20,10 @@ class Message extends Model
         'media_url',
         'media_type',
         'mime_type',
-        'file_name'
+        'file_name',
+        'campaign_id',
+        'is_campaign'
+        
 
     ];
 
