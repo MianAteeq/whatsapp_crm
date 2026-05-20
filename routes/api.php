@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\WhatsappSettingController;
 use App\Http\Controllers\Api\WhatsappTemplateController;
 use App\Http\Controllers\Api\WhatsappWebhookController;
 use App\Http\Controllers\CampaignController;
+use App\Http\Controllers\DashboardController;
 use Illuminate\Support\Facades\Route;
 
 // ============================================
@@ -43,6 +44,15 @@ Route::middleware('auth:sanctum')->group(function () {
      * User logout route
      */
     Route::post('/logout', [AuthController::class, 'logout']);
+
+
+     Route::get(
+
+            '/dashboard/insights',
+
+            [DashboardController::class, 'insights']
+
+        );
 
     // ---- Contact Management ----
 
