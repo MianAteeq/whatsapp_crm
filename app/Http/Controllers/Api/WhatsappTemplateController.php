@@ -749,44 +749,25 @@ class WhatsappTemplateController extends Controller
         // STORE FILE PUBLICLY
         // ==================================================
 
-      // ==================================================
-// STORE FILE PUBLICLY
-// ==================================================
+        $storedPath = $file->store(
 
-       $directory = storage_path('app/public/whatsapp-template-media');
-
-        if (!file_exists($directory)) {
-            mkdir($directory, 0775, true);
-        }
-
-        $filename = time() . '_' . $file->getClientOriginalName();
-
-        $storedPath = $file->storeAs(
             'whatsapp-template-media',
-            $filename,
+
             'public'
+
         );
 
-        if (!$storedPath) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unable to store file',
-            ], 500);
-        }
+
 
         // ==================================================
-        // VERIFY FILE EXISTS
+        // PUBLIC URL
         // ==================================================
 
-        $fullPath = storage_path('app/public/' . $storedPath);
+        $publicUrl = asset(
 
-        if (!file_exists($fullPath)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'File was not stored physically',
-                'path' => $fullPath,
-            ], 500);
-        }
+            'storage/' . $storedPath
+
+        );
 
 
 
@@ -952,7 +933,7 @@ class WhatsappTemplateController extends Controller
             // LOCAL STORAGE
             // ==============================================
 
-            'media_url' => $fullPath,
+            'media_url' => $publicUrl,
 
             'media_path' => $storedPath,
 
