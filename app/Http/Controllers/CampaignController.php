@@ -61,6 +61,12 @@ class CampaignController extends Controller
 
                 'scheduled_at' => $request->scheduled_at
 
+                    ? Carbon::parse(
+                        $request->scheduled_at
+                    )->format('Y-m-d H:i:s')
+
+                    : null
+
             ]);
 
 
