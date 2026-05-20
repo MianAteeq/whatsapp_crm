@@ -26,7 +26,10 @@ class WhatsappTemplate extends Model
 
         'status',
 
-        'components'
+        'components',
+        'header_type',
+        'media_url',
+        'media_mime'
 
     ];
 }

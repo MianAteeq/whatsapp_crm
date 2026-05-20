@@ -561,7 +561,7 @@ class WhatsappMessageController extends Controller
 
             'sent_at' => now(),
 
-            'payload' =>json_encode($response)
+            'payload' => json_encode($response)
 
         ]);
 
