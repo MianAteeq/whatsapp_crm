@@ -1493,7 +1493,7 @@ class WhatsappWebhookController extends Controller
                         }
                     }
 
-                     $message_log = WhatsappMessageLog::where(
+                    $messageLog = WhatsappMessageLog::where(
 
                         'message_id',
 
@@ -1501,19 +1501,72 @@ class WhatsappWebhookController extends Controller
 
                     )->first();
 
-                    if(isset($message_log)){
 
-                       WhatsappMessageLog::where(
 
-                            'message_id',
+                    if ($messageLog) {
 
-                            $messageId
-
-                        )->update([
+                        $updateData = [
 
                             'status' => $messageStatus
 
-                        ]);
+                        ];
+
+
+
+                        // ======================================
+                        // DELIVERED
+                        // ======================================
+
+                        if ($messageStatus === 'delivered') {
+
+                            $updateData['delivered_at'] = now();
+                        }
+
+
+
+                        // ======================================
+                        // READ
+                        // ======================================
+
+                        if ($messageStatus === 'read') {
+
+                            $updateData['read_at'] = now();
+
+
+
+                            // AUTO DELIVERED FIX
+                            if (!$messageLog->delivered_at) {
+
+                                $updateData['delivered_at'] = now();
+                            }
+                        }
+
+
+
+                        // ======================================
+                        // FAILED
+                        // ======================================
+
+                        if ($messageStatus === 'failed') {
+
+                            $updateData['failed_at'] = now();
+
+
+
+                            $updateData['error_message'] = json_encode(
+
+                                $status['errors'] ?? []
+
+                            );
+                        }
+
+
+
+                        // ======================================
+                        // UPDATE
+                        // ======================================
+
+                        $messageLog->update($updateData);
                     }
 
 

@@ -547,13 +547,21 @@ class WhatsappMessageController extends Controller
 
             'tenant_id' => auth()->user()->tenant_id,
 
+            'campaign_id' => null,
+
+            'contact_id' => $contact->id,
+
             'message_id' => $response['messages'][0]['id'] ?? null,
 
             'template_name' => $template->name,
 
             'recipient' => $contact->phone,
 
-            'status' => 'sent'
+            'status' => 'sent',
+
+            'sent_at' => now(),
+
+            'payload' => $response
 
         ]);
 

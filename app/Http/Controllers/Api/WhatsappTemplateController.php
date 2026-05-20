@@ -825,6 +825,8 @@ class WhatsappTemplateController extends Controller
     {
         $tenantId = auth()->user()->tenant_id;
 
+
+
         // =====================================================
         // TOTAL MESSAGE COUNTS
         // =====================================================
@@ -834,184 +836,211 @@ class WhatsappTemplateController extends Controller
             $tenantId
         )->count();
 
+
+
         $totalDelivered = WhatsappMessageLog::where(
             'tenant_id',
             $tenantId
         )
-            ->where('status', 'delivered')
+            ->whereNotNull('delivered_at')
             ->count();
+
+
 
         $totalRead = WhatsappMessageLog::where(
             'tenant_id',
             $tenantId
         )
-            ->where('status', 'read')
+            ->whereNotNull('read_at')
             ->count();
+
+
 
         $totalReplies = WhatsappMessageLog::where(
             'tenant_id',
             $tenantId
         )
-            ->where('status', 'replied')
+            ->whereNotNull('replied_at')
             ->count();
+
+
 
         // =====================================================
         // GLOBAL RATES
         // =====================================================
 
         $deliveryRate = $totalSent > 0
-            ? round(($totalDelivered / $totalSent) * 100, 1)
+
+            ? round(
+                ($totalDelivered / $totalSent) * 100,
+                1
+            )
+
             : 0;
 
+
+
         $readRate = $totalDelivered > 0
-            ? round(($totalRead / $totalDelivered) * 100, 1)
+
+            ? round(
+                ($totalRead / $totalDelivered) * 100,
+                1
+            )
+
             : 0;
+
+
 
         // =====================================================
         // TEMPLATE ANALYTICS
         // =====================================================
 
         $templates = WhatsappMessageLog::select(
+
             'template_name',
+
             DB::raw('COUNT(*) as total_sent'),
+
             DB::raw("
             SUM(
                 CASE
-                    WHEN status = 'delivered'
+                    WHEN delivered_at IS NOT NULL
                     THEN 1
                     ELSE 0
                 END
             ) as total_delivered
         "),
+
             DB::raw("
             SUM(
                 CASE
-                    WHEN status = 'read'
+                    WHEN read_at IS NOT NULL
                     THEN 1
                     ELSE 0
                 END
             ) as total_read
         "),
+
             DB::raw("
             SUM(
                 CASE
-                    WHEN status = 'replied'
+                    WHEN replied_at IS NOT NULL
                     THEN 1
                     ELSE 0
                 END
             ) as total_replied
         ")
+
         )
             ->where('tenant_id', $tenantId)
             ->groupBy('template_name')
             ->orderByDesc('total_sent')
             ->get();
 
-            // return $templates;
+
 
         // =====================================================
         // FORMAT TOP TEMPLATES
         // =====================================================
 
-       $topTemplates = $templates->map(function ($item) {
+        $topTemplates = $templates->map(function ($item) {
 
-    // ======================================
-    // FIX INCONSISTENT DATA
-    // ======================================
+            $sent = (int) $item->total_sent;
 
-    $sent = (int) $item->total_sent;
+            $delivered = (int) $item->total_delivered;
 
-    $delivered = max(
+            $read = (int) $item->total_read;
 
-        (int) $item->total_delivered,
-
-        (int) $item->total_read
-
-    );
-
-    $read = (int) $item->total_read;
-
-    $replied = (int) $item->total_replied;
+            $replied = (int) $item->total_replied;
 
 
 
-    // ======================================
-    // DELIVERY RATE
-    // ======================================
+            // ======================================
+            // FIX INVALID DATA
+            // ======================================
 
-    $templateDeliveryRate = $sent > 0
+            if ($read > $delivered) {
 
-        ? round(
-
-            ($delivered / $sent) * 100,
-
-            1
-
-        )
-
-        : 0;
+                $delivered = $read;
+            }
 
 
 
-    // ======================================
-    // READ RATE
-    // ======================================
+            // ======================================
+            // DELIVERY RATE
+            // ======================================
 
-    $templateReadRate = $delivered > 0
+            $templateDeliveryRate = $sent > 0
 
-        ? round(
+                ? round(
+                    ($delivered / $sent) * 100,
+                    1
+                )
 
-            ($read / $delivered) * 100,
-
-            1
-
-        )
-
-        : 0;
+                : 0;
 
 
 
-    return [
+            // ======================================
+            // READ RATE
+            // ======================================
 
-        'template_name' => $item->template_name,
+            $templateReadRate = $delivered > 0
 
-        'sent' => $sent,
+                ? round(
+                    ($read / $delivered) * 100,
+                    1
+                )
 
-        'delivered' => $delivered,
+                : 0;
 
-        'reads' => $read,
 
-        'replies' => $replied,
 
-        'delivery_rate' => $templateDeliveryRate,
+            return [
 
-        'read_rate' => $templateReadRate,
+                'template_name' => $item->template_name,
 
-        'status' => $templateReadRate >= 70
+                'sent' => $sent,
 
-            ? 'excellent'
+                'delivered' => $delivered,
 
-            : (
+                'reads' => $read,
 
-                $templateReadRate >= 40
+                'replies' => $replied,
 
-                    ? 'good'
+                'delivery_rate' => $templateDeliveryRate,
 
-                    : 'poor'
+                'read_rate' => $templateReadRate,
 
-            ),
+                'status' => $templateReadRate >= 70
 
-    ];
+                    ? 'excellent'
 
-});
+                    : (
+
+                        $templateReadRate >= 40
+
+                        ? 'good'
+
+                        : 'poor'
+
+                    ),
+
+            ];
+        });
+
+
 
         // =====================================================
         // CATEGORY HEALTH
         // =====================================================
 
         $categoryPerformance = WhatsappTemplate::select(
+
             'category',
+
             DB::raw('COUNT(*) as total_templates'),
+
             DB::raw("
             SUM(
                 CASE
@@ -1021,6 +1050,7 @@ class WhatsappTemplateController extends Controller
                 END
             ) as approved_templates
         ")
+
         )
             ->where('tenant_id', $tenantId)
             ->groupBy('category')
@@ -1028,21 +1058,34 @@ class WhatsappTemplateController extends Controller
             ->map(function ($item) {
 
                 $score = $item->total_templates > 0
+
                     ? round(
                         (
                             $item->approved_templates /
                             $item->total_templates
                         ) * 100
                     )
+
                     : 0;
 
+
+
                 return [
-                    'category' => strtoupper($item->category),
-                    'score'    => $score,
-                    'total'    => (int) $item->total_templates,
+
+                    'category' => strtoupper(
+                        $item->category
+                    ),
+
+                    'score' => $score,
+
+                    'total' => (int) $item->total_templates,
+
                     'approved' => (int) $item->approved_templates,
+
                 ];
             });
+
+
 
         // =====================================================
         // HEALTH ALERT
@@ -1052,31 +1095,55 @@ class WhatsappTemplateController extends Controller
             ->sortBy('score')
             ->first();
 
+
+
         $healthAlert = null;
 
-        if ($lowestCategory && $lowestCategory['score'] < 80) {
+
+
+        if (
+
+            $lowestCategory
+
+            &&
+
+            $lowestCategory['score'] < 80
+
+        ) {
 
             $healthAlert =
-                strtolower($lowestCategory['category']) .
+
+                strtolower(
+                    $lowestCategory['category']
+                )
+
+                .
+
                 ' template quality dropped below optimal threshold.';
         }
+
+
 
         // =====================================================
         // WEEKLY PERFORMANCE
         // =====================================================
 
         $weeklyPerformance = WhatsappMessageLog::select(
+
             DB::raw("DATE(created_at) as date"),
+
             DB::raw("COUNT(*) as sent"),
+
             DB::raw("
             SUM(
                 CASE
-                    WHEN status = 'delivered'
+                    WHEN delivered_at IS NOT NULL
                     THEN 1
                     ELSE 0
                 END
             ) as delivered
         ")
+
         )
             ->where('tenant_id', $tenantId)
             ->whereDate(
@@ -1090,12 +1157,22 @@ class WhatsappTemplateController extends Controller
             ->map(function ($item) {
 
                 return [
-                    'date'      => $item->date,
-                    'day'       => date('D', strtotime($item->date)),
-                    'sent'      => (int) $item->sent,
+
+                    'date' => $item->date,
+
+                    'day' => date(
+                        'D',
+                        strtotime($item->date)
+                    ),
+
+                    'sent' => (int) $item->sent,
+
                     'delivered' => (int) $item->delivered,
+
                 ];
             });
+
+
 
         // =====================================================
         // RECENT ACTIVITY
@@ -1108,60 +1185,108 @@ class WhatsappTemplateController extends Controller
             ->latest()
             ->take(10)
             ->get([
+
                 'template_name',
+
                 'recipient',
+
                 'status',
+
+                'sent_at',
+
+                'delivered_at',
+
+                'read_at',
+
                 'created_at',
+
             ]);
+
+
 
         // =====================================================
         // FINAL RESPONSE
         // =====================================================
 
         return response()->json([
+
             'success' => true,
+
+
 
             // =================================================
             // HERO INSIGHT
             // =================================================
 
             'hero_insight' => [
+
                 'delivery_rate' => $deliveryRate,
+
                 'quality_score' => $deliveryRate >= 90
+
                     ? 'Exceptional'
-                    : ($deliveryRate >= 70
+
+                    : (
+
+                        $deliveryRate >= 70
+
                         ? 'Good'
-                        : 'Needs Improvement'),
+
+                        : 'Needs Improvement'
+
+                    ),
+
             ],
+
+
 
             // =================================================
             // KPI STATS
             // =================================================
 
             'stats' => [
-                'total_sent'      => $totalSent,
+
+                'total_sent' => $totalSent,
+
                 'total_delivered' => $totalDelivered,
-                'delivery_rate'   => $deliveryRate,
-                'read_rate'       => $readRate,
-                'replies'         => $totalReplies,
+
+                'total_read' => $totalRead,
+
+                'delivery_rate' => $deliveryRate,
+
+                'read_rate' => $readRate,
+
+                'replies' => $totalReplies,
+
             ],
+
+
 
             // =================================================
             // CATEGORY HEALTH
             // =================================================
 
             'category_health' => [
+
                 'categories' => $categoryPerformance,
-                'alert'      => $healthAlert,
+
+                'alert' => $healthAlert,
+
             ],
+
+
 
             // =================================================
             // CHARTS
             // =================================================
 
             'charts' => [
+
                 'weekly_performance' => $weeklyPerformance,
+
             ],
+
+
 
             // =================================================
             // TOP TEMPLATES
@@ -1169,11 +1294,14 @@ class WhatsappTemplateController extends Controller
 
             'top_templates' => $topTemplates,
 
+
+
             // =================================================
             // RECENT ACTIVITY
             // =================================================
 
             'recent_activity' => $recentActivity,
+
         ]);
     }
 }

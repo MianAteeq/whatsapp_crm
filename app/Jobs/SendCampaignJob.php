@@ -245,7 +245,7 @@ class SendCampaignJob implements ShouldQueue
                     // STORE MESSAGE
                     // ==========================================
 
-                  $message= Message::create([
+                    $message = Message::create([
 
                         'tenant_id' => $campaign->tenant_id,
                         'campaign_id' => $campaign->id,
@@ -272,13 +272,21 @@ class SendCampaignJob implements ShouldQueue
 
                         'tenant_id' => $campaign->tenant_id,
 
+                        'campaign_id' => $campaign->id,
+
+                        'contact_id' => $contact->id,
+
                         'message_id' => $messageId,
 
                         'template_name' => $template->name,
 
                         'recipient' => $contact->phone,
 
-                        'status' => 'sent'
+                        'status' => 'sent',
+
+                        'sent_at' => now(),
+
+                        'payload' => $response
 
                     ]);
 
