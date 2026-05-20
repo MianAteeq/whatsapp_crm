@@ -286,7 +286,7 @@ class SendCampaignJob implements ShouldQueue
 
                         'sent_at' => now(),
 
-                        'payload' => $response
+                        'payload' => json_encode($response)
 
                     ]);
 

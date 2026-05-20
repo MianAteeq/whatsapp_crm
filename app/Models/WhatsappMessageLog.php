@@ -7,4 +7,10 @@ use Illuminate\Database\Eloquent\Model;
 class WhatsappMessageLog extends Model
 {
      protected $guarded = [];
+
+     protected $casts = [
+
+    'payload' => 'array'
+
+];
 }
