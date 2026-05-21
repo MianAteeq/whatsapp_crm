@@ -14,7 +14,7 @@ return [
 
     'allowed_origins' => [
 
-        'https://ais-dev-qcowfv4cefg67wa3butixx-757043192357.asia-east1.run.app',
+        'https://website.throbtech.com',
 
     ],
 
