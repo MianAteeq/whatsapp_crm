@@ -15,6 +15,7 @@ return [
     'allowed_origins' => [
 
         'https://website.throbtech.com',
+        'https://generic-turbofan-rundown.ngrok-free.dev'
 
     ],
 
