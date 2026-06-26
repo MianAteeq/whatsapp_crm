@@ -1166,6 +1166,63 @@ class WhatsappWebhookController extends Controller
                         new MessageReceived($message)
 
                     )->toOthers();
+
+                    // ======================================
+                    // AUTOMATIC RESPONSE SYSTEM
+                    // ======================================
+                    if ($conversation->is_auto_reply_active && !empty($setting->openai_key) && !empty($setting->company_prompt) && $messageType === 'text') {
+                        try {
+                            $openAiService = new \App\Services\OpenAiService();
+                            $replyText = $openAiService->generateResponse(
+                                $setting->openai_key,
+                                $setting->company_prompt,
+                                $conversation->id,
+                                $messageText
+                            );
+
+                          \Log::info('WhatsApp replyText', [
+    'replyText' => $replyText,
+]);
+
+                            $metaResponse = null;
+                            if (!empty($setting->access_token) && !empty($setting->phone_number_id)) {
+                                $metaResponse = \Illuminate\Support\Facades\Http::withToken($setting->access_token)
+                                    ->post(
+                                        "https://graph.facebook.com/v19.0/{$setting->phone_number_id}/messages",
+                                        [
+                                            'messaging_product' => 'whatsapp',
+                                            'to' => $contact->phone,
+                                            'type' => 'text',
+                                            'text' => [
+                                                'body' => $replyText,
+                                            ],
+                                        ]
+                                    )
+                                    ->json();
+                            }
+
+                            $autoReplyMsg = Message::create([
+                                'tenant_id' => $setting->tenant_id,
+                                'conversation_id' => $conversation->id,
+                                'message_id' => $metaResponse['messages'][0]['id'] ?? 'auto_' . uniqid(),
+                                'direction' => 'outgoing',
+                                'message' => $replyText,
+                                'type' => 'text',
+                                'status' => 'sent',
+                                'payload' => $metaResponse,
+                            ]);
+
+                            $conversation->update([
+                                'last_message' => $replyText,
+                                'last_message_at' => now(),
+                            ]);
+
+                            broadcast(new MessageReceived($autoReplyMsg));
+
+                        } catch (\Exception $autoReplyEx) {
+                            \Log::error('Auto-Reply Webhook Error: ' . $autoReplyEx->getMessage());
+                        }
+                    }
                 } catch (\Exception $e) {
 
                     \Log::error(

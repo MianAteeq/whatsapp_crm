@@ -571,4 +571,95 @@ class WhatsappMessageController extends Controller
             'response' => $response,
         ]);
     }
+
+    /**
+     * Simulate an incoming message from a contact for auto-reply features.
+     */
+    public function simulateIncoming(Request $request)
+    {
+        $request->validate([
+            'conversation_id' => 'required',
+            'user_message' => 'nullable|string',
+        ]);
+
+        $conversation = Conversation::where(
+            'tenant_id',
+            auth()->user()->tenant_id
+        )->findOrFail($request->conversation_id);
+
+        $contact = $conversation->contact;
+
+        $userMsg = strtolower(trim($request->user_message ?? ''));
+        
+        // Contextual auto-reply generator
+        if (str_contains($userMsg, 'hello') || str_contains($userMsg, 'hi') || str_contains($userMsg, 'hey')) {
+            $replyText = "Hi {$contact->name}! Hope you are having a wonderful day. How can I help you today?";
+        } elseif (str_contains($userMsg, 'price') || str_contains($userMsg, 'cost') || str_contains($userMsg, 'how much') || str_contains($userMsg, 'plan')) {
+            $replyText = "Our pricing plans start from just $49/month! You can find the details on the SaaS CRM Plans page.";
+        } elseif (str_contains($userMsg, 'support') || str_contains($userMsg, 'help') || str_contains($userMsg, 'issue')) {
+            $replyText = "Sure, I can connect you to support. Please describe your issue in detail.";
+        } elseif (str_contains($userMsg, 'thank') || str_contains($userMsg, 'thx') || str_contains($userMsg, 'thanks')) {
+            $replyText = "You're very welcome! Let me know if there's anything else I can do for you.";
+        } else {
+            $replyText = "This is a simulated automatic reply from {$contact->name}. Thank you for messaging: \"" . ($request->user_message ?? '') . "\"!";
+        }
+
+        $incomingMessage = Message::create([
+            'tenant_id' => auth()->user()->tenant_id,
+            'conversation_id' => $conversation->id,
+            'message_id' => 'sim_' . uniqid(),
+            'direction' => 'incoming',
+            'message' => $replyText,
+            'type' => 'text',
+            'status' => 'delivered',
+            'payload' => ['simulated' => true],
+        ]);
+
+        $conversation->update([
+            'last_message' => $replyText,
+            'last_message_at' => now(),
+        ]);
+
+        // Broadcast event for real-time UI updates
+        broadcast(new \App\Events\MessageReceived($incomingMessage));
+
+        // AUTOMATIC RESPONSE SYSTEM for simulator
+        $setting = WhatsappSetting::where('tenant_id', auth()->user()->tenant_id)->first();
+        if ($conversation->is_auto_reply_active && $setting && !empty($setting->openai_key) && !empty($setting->company_prompt)) {
+            try {
+                $openAiService = new \App\Services\OpenAiService();
+                $aiReplyText = $openAiService->generateResponse(
+                    $setting->openai_key,
+                    $setting->company_prompt,
+                    $conversation->id,
+                    $replyText
+                );
+
+                $autoReplyMsg = Message::create([
+                    'tenant_id' => auth()->user()->tenant_id,
+                    'conversation_id' => $conversation->id,
+                    'message_id' => 'auto_sim_' . uniqid(),
+                    'direction' => 'outgoing',
+                    'message' => $aiReplyText,
+                    'type' => 'text',
+                    'status' => 'sent',
+                    'payload' => ['simulated' => true],
+                ]);
+
+                $conversation->update([
+                    'last_message' => $aiReplyText,
+                    'last_message_at' => now(),
+                ]);
+
+                broadcast(new \App\Events\MessageReceived($autoReplyMsg));
+            } catch (\Exception $autoReplyEx) {
+                \Log::error('Simulator Auto-Reply Error: ' . $autoReplyEx->getMessage());
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $incomingMessage,
+        ]);
+    }
 }

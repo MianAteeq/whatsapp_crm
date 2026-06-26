@@ -117,4 +117,21 @@ class ConversationController extends Controller
 
         ]);
     }
+
+    public function toggleAutoReply(Request $request, $id)
+    {
+        $conversation = Conversation::where(
+            'tenant_id',
+            auth()->user()->tenant_id
+        )->findOrFail($id);
+
+        $conversation->update([
+            'is_auto_reply_active' => $request->boolean('is_active')
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'is_auto_reply_active' => (bool)$conversation->is_auto_reply_active
+        ]);
+    }
 }

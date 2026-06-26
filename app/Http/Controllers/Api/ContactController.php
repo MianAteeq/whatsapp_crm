@@ -41,9 +41,7 @@ class ContactController extends Controller
                 $query->where('status', $request->status);
             })
 
-            ->latest()
-
-            ->paginate(20);
+            ->paginate($request->input('per_page', 10));
 
         return response()->json($contacts);
     }
@@ -56,6 +54,22 @@ class ContactController extends Controller
 
     public function store(Request $request)
     {
+        $tenant = $this->currentUser()->tenant;
+        if ($tenant) {
+            $limits = $tenant->getLimits();
+            $maxContacts = $limits['contacts'] ?? 'Unlimited';
+            
+            if (strtolower($maxContacts) !== 'unlimited') {
+                $maxContacts = (int) str_replace([',', ' '], '', $maxContacts);
+                $currentContactsCount = Contact::where('tenant_id', $tenant->id)->count();
+                if ($currentContactsCount >= $maxContacts) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Your current plan (' . ($tenant->plan ?? 'free') . ') supports up to ' . number_format($maxContacts) . ' contacts. Please upgrade your subscription tier to add more contacts.'
+                    ], 400);
+                }
+            }
+        }
 
         $request->validate([
 
@@ -212,20 +226,35 @@ class ContactController extends Controller
 
     public function import(Request $request)
     {
+        $tenant = $this->currentUser()->tenant;
+        if ($tenant) {
+            $limits = $tenant->getLimits();
+            $maxContacts = $limits['contacts'] ?? 'Unlimited';
+            
+            if (strtolower($maxContacts) !== 'unlimited') {
+                $maxContacts = (int) str_replace([',', ' '], '', $maxContacts);
+                $currentContactsCount = Contact::where('tenant_id', $tenant->id)->count();
+                if ($currentContactsCount >= $maxContacts) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Your current plan (' . ($tenant->plan ?? 'free') . ') supports up to ' . number_format($maxContacts) . ' contacts. Please upgrade your subscription to import more contacts.'
+                    ], 400);
+                }
+            }
+        }
 
         $request->validate([
-
             'file' => 'required|mimes:csv,xlsx,xls'
-
         ]);
 
+        $mappings = [];
+        if ($request->filled('mappings')) {
+            $mappings = json_decode($request->input('mappings'), true) ?: [];
+        }
 
         Excel::import(
-
-            new ContactsImport,
-
+            new ContactsImport($mappings),
             $request->file('file')
-
         );
 
 
@@ -428,7 +457,7 @@ class ContactController extends Controller
 
         ->latest()
 
-        ->paginate(20);
+        ->paginate($request->input('per_page', 10));
 
 
 
