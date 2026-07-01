@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\WhatsappWebhookController;
 use App\Http\Controllers\CampaignController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Api\SystemSettingsController;
+use App\Http\Controllers\Api\AutomationController;
 use Illuminate\Support\Facades\Route;
 
 // ============================================
@@ -270,6 +271,16 @@ Route::middleware('auth:sanctum')->group(function () {
         [CampaignController::class, 'destroy']
 
     );
+
+    // ---- Automation Routes ----
+    Route::get('automation/workflows', [AutomationController::class, 'index']);
+    Route::post('automation/workflows', [AutomationController::class, 'store']);
+    Route::get('automation/workflows/{id}', [AutomationController::class, 'show']);
+    Route::put('automation/workflows/{id}', [AutomationController::class, 'update']);
+    Route::delete('automation/workflows/{id}', [AutomationController::class, 'destroy']);
+    Route::post('automation/workflows/{id}/canvas', [AutomationController::class, 'saveCanvas']);
+    Route::get('automation/executions', [AutomationController::class, 'executions']);
+    Route::get('automation/dashboard-stats', [AutomationController::class, 'dashboardStats']);
 
     // ---- SaaS Super Admin Panel Routes ----
     Route::middleware('superadmin')->prefix('admin')->group(function () {

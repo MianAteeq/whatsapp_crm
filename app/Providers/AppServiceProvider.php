@@ -19,6 +19,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        \App\Models\Contact::observe(\App\Observers\ContactObserver::class);
+        \App\Models\WhatsappTemplate::observe(\App\Observers\WhatsappTemplateObserver::class);
     }
 }

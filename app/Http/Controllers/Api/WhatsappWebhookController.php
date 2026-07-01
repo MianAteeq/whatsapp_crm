@@ -1167,10 +1167,18 @@ class WhatsappWebhookController extends Controller
 
                     )->toOthers();
 
+                    // Dispatch matching workflow executions
+                    $workflowMatched = \App\Services\Workflow\WorkflowTriggerManager::dispatchEvent('incoming_message', $setting->tenant_id, [
+                        'contact' => $contact,
+                        'message' => $message
+                    ]);
+
+
                     // ======================================
                     // AUTOMATIC RESPONSE SYSTEM
+                    // Skip auto-reply if a workflow already handled the message
                     // ======================================
-                    if ($conversation->is_auto_reply_active && !empty($setting->openai_key) && !empty($setting->company_prompt) && $messageType === 'text') {
+                    if (!$workflowMatched && $conversation->is_auto_reply_active && !empty($setting->openai_key) && !empty($setting->company_prompt) && $messageType === 'text') {
                         try {
                             $openAiService = new \App\Services\OpenAiService();
                             $replyText = $openAiService->generateResponse(
