@@ -21,6 +21,10 @@ use App\Http\Controllers\CampaignController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Api\SystemSettingsController;
 use App\Http\Controllers\Api\AutomationController;
+use App\Http\Controllers\Api\EmailCampaignController;
+use App\Http\Controllers\Api\EmailTemplateController;
+use App\Http\Controllers\Api\EmailSettingController;
+use App\Http\Controllers\Api\EmailTrackingController;
 use Illuminate\Support\Facades\Route;
 
 // ============================================
@@ -46,6 +50,18 @@ Route::get('/branding', [SystemSettingsController::class, 'branding']);
  * Public plans route
  */
 Route::get('/plans', [SystemSettingsController::class, 'publicPlans']);
+
+/**
+ * Public email tracking & unsubscribe routes
+ */
+Route::get('/email/unsubscribe', [EmailTrackingController::class, 'unsubscribe']);
+Route::post('/webhook/email/{provider}', [EmailTrackingController::class, 'webhook']);
+
+/**
+ * Public Mailtrap webhook delivery notification routes
+ */
+Route::post('/webhooks/mailtrap', [\App\Http\Controllers\Api\MailtrapWebhookController::class, 'handle']);
+Route::post('/webhook/mailtrap', [\App\Http\Controllers\Api\MailtrapWebhookController::class, 'handle']);
 
 // ============================================
 // Protected Routes (Require Authentication)
@@ -77,6 +93,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('contacts/advance-search', [ContactController::class, 'advanceSearch']);
 
     /**
+     * Bulk delete contacts
+     */
+    Route::post('contacts/batch-delete', [ContactController::class, 'batchDelete']);
+
+    /**
      * Contact CRUD operations (Create, Read, Update, Delete)
      */
     Route::apiResource('contacts', ContactController::class);
@@ -92,6 +113,10 @@ Route::middleware('auth:sanctum')->group(function () {
      * Tag CRUD operations
      */
     Route::apiResource('tags', TagController::class);
+
+    // ---- Category Management (Category-Based CRM Architecture) ----
+    Route::get('categories/{id}/email-stats', [\App\Http\Controllers\Api\CategoryController::class, 'emailStats']);
+    Route::apiResource('categories', \App\Http\Controllers\Api\CategoryController::class);
 
     // ---- WhatsApp Settings ----
 
@@ -310,6 +335,74 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('settings/system/optimize', [\App\Http\Controllers\Api\SystemSettingsController::class, 'optimize']);
         Route::get('settings/system/audit-logs', [\App\Http\Controllers\Api\SystemSettingsController::class, 'auditLogs']);
     });
+
+    // ---- Business Information Scraper Routes ----
+    Route::prefix('scraper')->group(function () {
+        Route::get('status', [\App\Http\Controllers\Api\ScraperController::class, 'status']);
+        Route::get('category-stats', [\App\Http\Controllers\Api\ScraperController::class, 'categoryStats']);
+        Route::get('searches', [\App\Http\Controllers\Api\ScraperController::class, 'searches']);
+        Route::post('searches', [\App\Http\Controllers\Api\ScraperController::class, 'storeSearch']);
+        Route::get('searches/{id}', [\App\Http\Controllers\Api\ScraperController::class, 'getSearch']);
+        Route::delete('searches/{id}', [\App\Http\Controllers\Api\ScraperController::class, 'deleteSearch']);
+        Route::post('searches/{id}/process-now', [\App\Http\Controllers\Api\ScraperController::class, 'processNow']);
+        Route::get('results', [\App\Http\Controllers\Api\ScraperController::class, 'results']);
+        Route::get('results/{id}', [\App\Http\Controllers\Api\ScraperController::class, 'showResult']);
+        Route::delete('results/{id}', [\App\Http\Controllers\Api\ScraperController::class, 'deleteResult']);
+        Route::post('results/batch-delete', [\App\Http\Controllers\Api\ScraperController::class, 'batchDeleteResults']);
+        Route::post('results/import-crm', [\App\Http\Controllers\Api\ScraperController::class, 'importToCrm']);
+        Route::post('results/{id}/enrich', [\App\Http\Controllers\Api\ScraperController::class, 'enrichLead']);
+        Route::post('results/bulk-enrich', [\App\Http\Controllers\Api\ScraperController::class, 'bulkEnrichLeads']);
+        Route::get('results/{id}/enrichment-logs', [\App\Http\Controllers\Api\ScraperController::class, 'getEnrichmentLogs']);
+        Route::get('export-csv', [\App\Http\Controllers\Api\ScraperController::class, 'exportCsv']);
+    });
+
+    // ---- Email Campaigns, Templates, & Provider Settings ----
+    Route::get('contacts/{id}/email-activities', [ContactController::class, 'emailActivities']);
+    Route::get('contacts/{id}/scraper-history', [ContactController::class, 'scraperHistory']);
+
+    // Email Settings
+    Route::get('email/settings', [EmailSettingController::class, 'show']);
+    Route::post('email/settings', [EmailSettingController::class, 'store']);
+    Route::post('email/settings/test', [EmailSettingController::class, 'testConnection']);
+
+    // Email Sending Domains (Mailtrap Multi-tenant Verification)
+    Route::get('email/sending-domains', [\App\Http\Controllers\Api\EmailSendingDomainController::class, 'index']);
+    Route::post('email/sending-domains', [\App\Http\Controllers\Api\EmailSendingDomainController::class, 'store']);
+    Route::get('email/sending-domains/{id}', [\App\Http\Controllers\Api\EmailSendingDomainController::class, 'show']);
+    Route::post('email/sending-domains/{id}/verify', [\App\Http\Controllers\Api\EmailSendingDomainController::class, 'verify']);
+    Route::delete('email/sending-domains/{id}', [\App\Http\Controllers\Api\EmailSendingDomainController::class, 'destroy']);
+    Route::get('email/sending-domains/{id}/logs', [\App\Http\Controllers\Api\EmailSendingDomainController::class, 'domainLogs']);
+    Route::get('admin/email/sending-domains', [\App\Http\Controllers\Api\EmailSendingDomainController::class, 'adminIndex']);
+
+    // Email Templates
+    Route::post('email/templates/{id}/duplicate', [EmailTemplateController::class, 'duplicate']);
+    Route::apiResource('email/templates', EmailTemplateController::class);
+
+    // Email Campaigns
+    Route::post('email/ai/generate', [EmailCampaignController::class, 'generateWithAi']);
+    Route::post('email/campaigns/estimate-audience', [EmailCampaignController::class, 'estimateAudience']);
+    Route::post('email/campaigns/send-test', [EmailCampaignController::class, 'sendTest']);
+    Route::post('email/campaigns/{id}/launch', [EmailCampaignController::class, 'launch']);
+    Route::post('email/campaigns/{id}/pause', [EmailCampaignController::class, 'pause']);
+    Route::post('email/campaigns/{id}/resume', [EmailCampaignController::class, 'resume']);
+    Route::post('email/campaigns/{id}/cancel', [EmailCampaignController::class, 'cancel']);
+    Route::post('email/campaigns/{id}/duplicate', [EmailCampaignController::class, 'duplicate']);
+    Route::get('email/campaigns/{id}/report', [EmailCampaignController::class, 'report']);
+    Route::apiResource('email/campaigns', EmailCampaignController::class);
+
+    // AI Marketing Agent Routes (DeepSeek Powered)
+    Route::post('email/ai-agent/plan', [\App\Http\Controllers\Api\AiMarketingAgentController::class, 'plan']);
+    Route::get('email/ai-agent/runs', [\App\Http\Controllers\Api\AiMarketingAgentController::class, 'runs']);
+    Route::get('email/ai-agent/runs/{id}', [\App\Http\Controllers\Api\AiMarketingAgentController::class, 'showRun']);
+    Route::post('email/ai-agent/runs/{id}/approve', [\App\Http\Controllers\Api\AiMarketingAgentController::class, 'approve']);
+    Route::post('email/ai-agent/runs/{id}/cancel', [\App\Http\Controllers\Api\AiMarketingAgentController::class, 'cancel']);
+    Route::post('email/ai-agent/runs/{id}/analyze', [\App\Http\Controllers\Api\AiMarketingAgentController::class, 'analyze']);
+    Route::put('email/ai-agent/runs/{id}/campaign', [\App\Http\Controllers\Api\AiMarketingAgentController::class, 'updateRunCampaign']);
+    Route::get('email/ai-agent/knowledge', [\App\Http\Controllers\Api\AiMarketingAgentController::class, 'getKnowledge']);
+    Route::post('email/ai-agent/knowledge', [\App\Http\Controllers\Api\AiMarketingAgentController::class, 'updateKnowledge']);
+    Route::get('email/ai-agent/services', [\App\Http\Controllers\Api\AiMarketingAgentController::class, 'services']);
+    Route::post('email/ai-agent/services', [\App\Http\Controllers\Api\AiMarketingAgentController::class, 'saveService']);
+    Route::delete('email/ai-agent/services/{id}', [\App\Http\Controllers\Api\AiMarketingAgentController::class, 'deleteService']);
 });
 
 // ============================================

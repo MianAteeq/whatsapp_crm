@@ -623,13 +623,14 @@ class WhatsappMessageController extends Controller
         // Broadcast event for real-time UI updates
         broadcast(new \App\Events\MessageReceived($incomingMessage));
 
-        // AUTOMATIC RESPONSE SYSTEM for simulator
+        // AUTOMATIC RESPONSE SYSTEM for simulator (Universal OpenAI Key for all vendors)
         $setting = WhatsappSetting::where('tenant_id', auth()->user()->tenant_id)->first();
-        if ($conversation->is_auto_reply_active && $setting && !empty($setting->openai_key) && !empty($setting->company_prompt)) {
+        $activeOpenAiKey = \App\Services\OpenAiService::resolveApiKey($setting?->openai_key);
+        if ($conversation->is_auto_reply_active && $setting && !empty($activeOpenAiKey) && !empty($setting->company_prompt)) {
             try {
                 $openAiService = new \App\Services\OpenAiService();
                 $aiReplyText = $openAiService->generateResponse(
-                    $setting->openai_key,
+                    $activeOpenAiKey,
                     $setting->company_prompt,
                     $conversation->id,
                     $replyText

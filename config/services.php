@@ -35,4 +35,28 @@ return [
         ],
     ],
 
+    'google' => [
+        'maps_api_key' => env('GOOGLE_MAPS_API_KEY', ''),
+        'scraper_enabled' => env('BUSINESS_SCRAPER_ENABLED', true),
+    ],
+
+    'mailtrap' => [
+        'api_token' => env('MAILTRAP_API_TOKEN'),
+        'account_id' => env('MAILTRAP_ACCOUNT_ID', '174733'),
+        'webhook_secret' => env('MAILTRAP_WEBHOOK_SECRET'),
+        'domain' => env('MAILTRAP_DOMAIN'),
+        'from_email' => env('MAILTRAP_FROM_EMAIL'),
+        'from_name' => env('MAILTRAP_FROM_NAME'),
+        'reply_to' => env('MAILTRAP_REPLY_TO'),
+    ],
+
+    'deepseek' => [
+        'api_key' => env('DEEPSEEK_API_KEY'),
+    ],
+
+    'openai' => [
+        'api_key' => env('OPENAI_API_KEY'),
+        'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
+    ],
+
 ];

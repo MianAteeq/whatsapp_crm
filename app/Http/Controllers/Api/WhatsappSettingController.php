@@ -276,6 +276,8 @@ class WhatsappSettingController extends Controller
             'last_synced'          => $setting->updated_at?->toISOString(),
             'messaging_limit_tier' => $setting->messaging_limit_tier ?? 'TIER_250',
             'openai_key'           => $setting->openai_key ? str_repeat('•', 24) : null,
+            'has_openai_key'       => !empty(\App\Services\OpenAiService::resolveApiKey($setting->openai_key)),
+            'is_universal_openai'  => !empty(config('services.openai.api_key') ?: env('OPENAI_API_KEY')),
             'company_prompt'       => $setting->company_prompt,
         ];
     }
@@ -294,6 +296,8 @@ class WhatsappSettingController extends Controller
         
         $openaiKey = $request->openai_key;
         if ($existing && $openaiKey && (str_contains($openaiKey, '•') || $openaiKey === 'CONFIGURED')) {
+            $openaiKey = $existing->openai_key;
+        } elseif (empty($openaiKey) && $existing) {
             $openaiKey = $existing->openai_key;
         }
 

@@ -1175,14 +1175,15 @@ class WhatsappWebhookController extends Controller
 
 
                     // ======================================
-                    // AUTOMATIC RESPONSE SYSTEM
+                    // AUTOMATIC RESPONSE SYSTEM (Universal OpenAI Key for all vendors)
                     // Skip auto-reply if a workflow already handled the message
                     // ======================================
-                    if (!$workflowMatched && $conversation->is_auto_reply_active && !empty($setting->openai_key) && !empty($setting->company_prompt) && $messageType === 'text') {
+                    $activeOpenAiKey = \App\Services\OpenAiService::resolveApiKey($setting?->openai_key);
+                    if (!$workflowMatched && $conversation->is_auto_reply_active && !empty($activeOpenAiKey) && !empty($setting->company_prompt) && $messageType === 'text') {
                         try {
                             $openAiService = new \App\Services\OpenAiService();
                             $replyText = $openAiService->generateResponse(
-                                $setting->openai_key,
+                                $activeOpenAiKey,
                                 $setting->company_prompt,
                                 $conversation->id,
                                 $messageText
