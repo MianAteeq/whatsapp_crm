@@ -193,7 +193,7 @@ class SystemSettingsController extends Controller
 
             Mail::raw('This is a secure system alert verifying your SMTP connection credentials are functional.', function ($message) use ($recipient) {
                 $message->to($recipient)
-                    ->subject('THROB CRM: SMTP Settings Connection Handshake');
+                    ->subject('Talkinexx: SMTP Settings Connection Handshake');
             });
 
             return response()->json([
@@ -215,7 +215,7 @@ class SystemSettingsController extends Controller
     {
         return response()->json([
             'success' => true,
-            'website_name' => SettingsService::get('general.website_name', 'THROB CRM'),
+            'website_name' => SettingsService::get('general.website_name', 'Talkinexx'),
             'website_title' => SettingsService::get('general.website_title', 'THROB - Premium WhatsApp CRM SaaS Portal'),
             'website_logo' => SettingsService::get('general.website_logo'),
             'website_favicon' => SettingsService::get('general.website_favicon'),

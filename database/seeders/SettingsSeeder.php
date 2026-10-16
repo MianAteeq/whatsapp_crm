@@ -14,7 +14,7 @@ class SettingsSeeder extends Seeder
     {
         $settings = [
             // General Settings
-            ['key' => 'general.website_name', 'value' => 'THROB CRM', 'group' => 'general', 'type' => 'string'],
+            ['key' => 'general.website_name', 'value' => 'Talkinexx', 'group' => 'general', 'type' => 'string'],
             ['key' => 'general.website_title', 'value' => 'THROB - Premium WhatsApp CRM SaaS Portal', 'group' => 'general', 'type' => 'string'],
             ['key' => 'general.website_description', 'value' => 'Advanced SaaS WhatsApp CRM with Campaign automation and inbox chat controls.', 'group' => 'general', 'type' => 'text'],
             ['key' => 'general.website_keywords', 'value' => 'whatsapp crm, saas, campaign management, customer relationship', 'group' => 'general', 'type' => 'string'],
