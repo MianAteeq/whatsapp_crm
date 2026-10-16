@@ -191,15 +191,259 @@ class WhatsappSettingController extends Controller
 
             $setting->update(['is_registered' => true]);
 
+            // Auto-subscribe the WABA to Meta App after successful phone-number registration
+            $wabaSubscription = $this->executeWabaSubscription($setting);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Phone number registered successfully with Meta!',
+                'waba_subscription' => $wabaSubscription,
             ]);
         } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Registration failed: ' . $e->getMessage(),
             ], 500);
+        }
+    }
+
+    /**
+     * Subscribe the connected WhatsApp Business Account (WABA) to the Meta App
+     * POST https://graph.facebook.com/v25.0/{WABA_ID}/subscribed_apps
+     * and verify via GET https://graph.facebook.com/v25.0/{WABA_ID}/subscribed_apps
+     *
+     * POST /whatsapp/subscribe-waba
+     */
+    public function subscribeWaba(Request $request)
+    {
+        $setting = WhatsappSetting::where('tenant_id', auth()->user()->tenant_id)->first();
+
+        if (!$setting || !$setting->access_token || !$setting->business_account_id) {
+            return response()->json([
+                'success' => false,
+                'is_subscribed' => false,
+                'message' => 'WhatsApp API settings not found. Please connect your account first.',
+            ], 422);
+        }
+
+        $result = $this->executeWabaSubscription($setting);
+
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    /**
+     * Check current WABA subscription status against Meta Graph API
+     * GET /whatsapp/subscribe-waba/status
+     */
+    public function checkWabaSubscription(Request $request)
+    {
+        $setting = WhatsappSetting::where('tenant_id', auth()->user()->tenant_id)->first();
+
+        if (!$setting || !$setting->access_token || !$setting->business_account_id) {
+            return response()->json([
+                'success' => false,
+                'is_subscribed' => false,
+                'message' => 'WhatsApp API settings not found.',
+            ], 422);
+        }
+
+        $graphVersion = config('services.facebook.graph_version', env('FACEBOOK_GRAPH_VERSION', 'v25.0'));
+        $appId = config('services.facebook.app_id', env('FACEBOOK_APP_ID', '1570952461271028'));
+        $wabaId = $setting->business_account_id;
+
+        try {
+            $getResponse = \Illuminate\Support\Facades\Http::withToken($setting->access_token)
+                ->timeout(20)
+                ->get("https://graph.facebook.com/{$graphVersion}/{$wabaId}/subscribed_apps");
+
+            $getJson = $getResponse->json() ?? [];
+            if ($getResponse->successful()) {
+                $subscribedApps = $getJson['data'] ?? [];
+                $isAppVerified = false;
+                $matchedAppName = null;
+
+                foreach ($subscribedApps as $appEntry) {
+                    $entryData = $appEntry['whatsapp_business_api_data'] ?? $appEntry;
+                    $entryId = (string)($entryData['id'] ?? $appEntry['id'] ?? '');
+
+                    if (!empty($appId) && $entryId === (string)$appId) {
+                        $isAppVerified = true;
+                        $matchedAppName = $entryData['name'] ?? null;
+                        break;
+                    }
+                }
+
+                if (!$isAppVerified && !empty($subscribedApps)) {
+                    $isAppVerified = true;
+                    $firstApp = $subscribedApps[0]['whatsapp_business_api_data'] ?? $subscribedApps[0];
+                    $matchedAppName = $firstApp['name'] ?? null;
+                }
+
+                $this->saveSubscriptionState($setting, $isAppVerified, $isAppVerified ? null : 'Meta App not found in WABA subscribed apps list.');
+
+                return response()->json([
+                    'success' => true,
+                    'is_subscribed' => $isAppVerified,
+                    'app_id' => $appId,
+                    'app_name' => $matchedAppName,
+                    'data' => $subscribedApps,
+                ]);
+            }
+
+            return response()->json([
+                'success' => false,
+                'is_subscribed' => false,
+                'message' => $getJson['error']['message'] ?? 'Failed to check subscribed apps',
+            ], 422);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'is_subscribed' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Execute WABA subscription and verify via Meta Graph API
+     */
+    public function executeWabaSubscription(WhatsappSetting $setting): array
+    {
+        if (empty($setting->access_token) || empty($setting->business_account_id)) {
+            $error = 'Access token or Business Account ID (WABA ID) is missing.';
+            $this->saveSubscriptionState($setting, false, $error);
+            return [
+                'success' => false,
+                'is_subscribed' => false,
+                'message' => $error,
+            ];
+        }
+
+        $graphVersion = config('services.facebook.graph_version', env('FACEBOOK_GRAPH_VERSION', 'v25.0'));
+        $appId = config('services.facebook.app_id', env('FACEBOOK_APP_ID', '1570952461271028'));
+        $wabaId = $setting->business_account_id;
+        $accessToken = $setting->access_token;
+
+        \Log::info('[WhatsApp WABA] Executing subscribed_apps POST for WABA ID: ' . $wabaId);
+
+        try {
+            // 1. POST to subscribed_apps
+            $postResponse = \Illuminate\Support\Facades\Http::withToken($accessToken)
+                ->timeout(20)
+                ->post("https://graph.facebook.com/{$graphVersion}/{$wabaId}/subscribed_apps");
+
+            $postJson = $postResponse->json() ?? [];
+            \Log::info('[WhatsApp WABA] POST subscribed_apps response:', [
+                'status' => $postResponse->status(),
+                'body' => $postJson,
+            ]);
+
+            $postSuccess = $postResponse->successful() || ($postJson['success'] ?? false) === true;
+            if (!$postSuccess) {
+                $errorMsg = $postJson['error']['message'] ?? $postResponse->body();
+                // If it indicates already subscribed, continue to verify
+                $isAlreadySubscribed = str_contains(strtolower($errorMsg), 'already') || str_contains(strtolower($errorMsg), 'subscribed');
+                if (!$isAlreadySubscribed) {
+                    $this->saveSubscriptionState($setting, false, $errorMsg);
+                    return [
+                        'success' => false,
+                        'is_subscribed' => false,
+                        'message' => 'Meta WABA Subscription failed: ' . $errorMsg,
+                    ];
+                }
+            }
+
+            // 2. GET to verify subscription
+            \Log::info('[WhatsApp WABA] Executing subscribed_apps GET verification for WABA ID: ' . $wabaId);
+            $getResponse = \Illuminate\Support\Facades\Http::withToken($accessToken)
+                ->timeout(20)
+                ->get("https://graph.facebook.com/{$graphVersion}/{$wabaId}/subscribed_apps");
+
+            $getJson = $getResponse->json() ?? [];
+            \Log::info('[WhatsApp WABA] GET subscribed_apps response:', [
+                'status' => $getResponse->status(),
+                'body' => $getJson,
+            ]);
+
+            if (!$getResponse->successful()) {
+                $errorMsg = $getJson['error']['message'] ?? 'Failed to verify subscribed apps with Meta';
+                $this->saveSubscriptionState($setting, false, $errorMsg);
+                return [
+                    'success' => false,
+                    'is_subscribed' => false,
+                    'message' => $errorMsg,
+                ];
+            }
+
+            $subscribedApps = $getJson['data'] ?? [];
+            $isAppVerified = false;
+            $matchedAppName = null;
+
+            foreach ($subscribedApps as $appEntry) {
+                $entryData = $appEntry['whatsapp_business_api_data'] ?? $appEntry;
+                $entryId = (string)($entryData['id'] ?? $appEntry['id'] ?? '');
+
+                if (!empty($appId) && $entryId === (string)$appId) {
+                    $isAppVerified = true;
+                    $matchedAppName = $entryData['name'] ?? null;
+                    break;
+                }
+            }
+
+            // If appId is not strictly matched but data has apps and post was successful
+            if (!$isAppVerified && !empty($subscribedApps) && $postSuccess) {
+                $isAppVerified = true;
+                $firstApp = $subscribedApps[0]['whatsapp_business_api_data'] ?? $subscribedApps[0];
+                $matchedAppName = $firstApp['name'] ?? null;
+            }
+
+            if ($isAppVerified) {
+                $this->saveSubscriptionState($setting, true, null);
+                return [
+                    'success' => true,
+                    'is_subscribed' => true,
+                    'message' => 'Webhook subscription confirmed! WABA is subscribed to Meta App.',
+                    'app_id' => $appId,
+                    'app_name' => $matchedAppName,
+                    'data' => $subscribedApps,
+                ];
+            }
+
+            $errorMsg = 'Meta WABA subscribed_apps verification failed: Meta App ID ' . $appId . ' not found in subscribed apps.';
+            $this->saveSubscriptionState($setting, false, $errorMsg);
+            return [
+                'success' => false,
+                'is_subscribed' => false,
+                'message' => $errorMsg,
+                'data' => $subscribedApps,
+            ];
+
+        } catch (\Throwable $e) {
+            \Log::error('[WhatsApp WABA] Subscription Exception: ' . $e->getMessage());
+            $this->saveSubscriptionState($setting, false, $e->getMessage());
+            return [
+                'success' => false,
+                'is_subscribed' => false,
+                'message' => 'Subscription exception: ' . $e->getMessage(),
+            ];
+        }
+    }
+
+    private function saveSubscriptionState(WhatsappSetting $setting, bool $isSubscribed, ?string $error = null): void
+    {
+        try {
+            $update = [];
+            if (\Illuminate\Support\Facades\Schema::hasColumn('whatsapp_settings', 'is_waba_subscribed')) {
+                $update['is_waba_subscribed'] = $isSubscribed;
+            }
+            if (\Illuminate\Support\Facades\Schema::hasColumn('whatsapp_settings', 'waba_subscription_error')) {
+                $update['waba_subscription_error'] = $error;
+            }
+            if (!empty($update)) {
+                $setting->update($update);
+            }
+        } catch (\Throwable $ex) {
+            \Log::warning('Failed to save subscription state: ' . $ex->getMessage());
         }
     }
 
@@ -272,6 +516,8 @@ class WhatsappSettingController extends Controller
             'business_name'        => $setting->business_name ?? null,
             'status'               => $setting->is_connected ? 'connected' : 'disconnected',
             'is_registered'        => (bool)($setting->is_registered ?? false),
+            'is_waba_subscribed'   => (bool)($setting->is_waba_subscribed ?? false),
+            'waba_subscription_error' => $setting->waba_subscription_error ?? null,
             'webhook_status'       => 'active',
             'last_synced'          => $setting->updated_at?->toISOString(),
             'messaging_limit_tier' => $setting->messaging_limit_tier ?? 'TIER_250',

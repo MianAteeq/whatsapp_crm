@@ -167,6 +167,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('whatsapp/register', [WhatsappSettingController::class, 'registerNumber']);
 
     /**
+     * Subscribe WABA to Meta App and verify
+     */
+    Route::post('whatsapp/subscribe-waba', [WhatsappSettingController::class, 'subscribeWaba']);
+    Route::get('whatsapp/subscribe-waba/status', [WhatsappSettingController::class, 'checkWabaSubscription']);
+
+    /**
      * Retrieve WhatsApp business profile (logo, description, about) from Meta
      */
     Route::get('whatsapp/profile', [WhatsappSettingController::class, 'getProfile']);

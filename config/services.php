@@ -61,4 +61,10 @@ return [
         'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
     ],
 
+    'facebook' => [
+        'app_id' => env('FACEBOOK_APP_ID', '1570952461271028'),
+        'app_secret' => env('FACEBOOK_APP_SECRET'),
+        'graph_version' => env('FACEBOOK_GRAPH_VERSION', 'v25.0'),
+    ],
+
 ];
