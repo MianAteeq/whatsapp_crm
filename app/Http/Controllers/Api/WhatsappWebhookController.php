@@ -1072,7 +1072,7 @@ class WhatsappWebhookController extends Controller
 
                         [
 
-                            'wa_id' => $waId,
+                            'wa_id' => !empty($waId) ? $waId : $contact->phone,
 
                             'last_message' => '',
 

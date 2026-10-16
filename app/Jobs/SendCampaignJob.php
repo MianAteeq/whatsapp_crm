@@ -192,7 +192,7 @@ class SendCampaignJob implements ShouldQueue
 
                     [
 
-                        'wa_id' => $contact->phone,
+                        'wa_id' => !empty($contact->phone) ? $contact->phone : 'unknown',
 
                         'last_message' => '',
 

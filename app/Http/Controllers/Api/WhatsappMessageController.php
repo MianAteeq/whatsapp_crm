@@ -490,13 +490,13 @@ class WhatsappMessageController extends Controller
     |--------------------------------------------------------------------------
     */
 
-        $wa_id = $response['contacts'][0]['wa_id'] ?? null;
+        $cleanPhone = preg_replace('/[^0-9]/', '', (string)$request->phone);
+        $wa_id = $response['contacts'][0]['wa_id'] ?? (!empty($cleanPhone) ? $cleanPhone : (string)$request->phone);
 
         $contact = Contact::firstOrCreate(
             [
                 'tenant_id' => auth()->user()->tenant_id,
                 'phone'     => $request->phone,
-
             ],
             [
                 'name' => $request->phone,
@@ -504,72 +504,74 @@ class WhatsappMessageController extends Controller
         );
 
         /*
-    |--------------------------------------------------------------------------
-    | CONVERSATION
-    |--------------------------------------------------------------------------
-    */
+        |--------------------------------------------------------------------------
+        | CONVERSATION
+        |--------------------------------------------------------------------------
+        */
 
         $conversation = Conversation::firstOrCreate(
             [
-                'tenant_id' => auth()->user()->tenant_id,
+                'tenant_id'  => auth()->user()->tenant_id,
                 'contact_id' => $contact->id,
-                'wa_id'     => $wa_id,
             ],
             [
-                'last_message' => $messageText,
+                'wa_id'           => $wa_id,
+                'last_message'    => $messageText,
                 'last_message_at' => now(),
             ]
         );
 
+        if (empty($conversation->wa_id) && !empty($wa_id)) {
+            $conversation->update(['wa_id' => $wa_id]);
+        }
+
+        $conversation->update([
+            'last_message'    => $messageText,
+            'last_message_at' => now(),
+        ]);
+
         /*
-    |--------------------------------------------------------------------------
-    | SAVE MESSAGE
-    |--------------------------------------------------------------------------
-    */
+        |--------------------------------------------------------------------------
+        | SAVE MESSAGE & LOG
+        |--------------------------------------------------------------------------
+        */
 
-
-
+        $isSuccess = isset($response['messages']) && !empty($response['messages']);
+        $errorMessage = $response['error']['message'] ?? null;
+        if (!empty($response['error']['error_data']['details'])) {
+            $errorMessage .= ': ' . $response['error']['error_data']['details'];
+        }
 
         Message::create([
             'tenant_id'       => auth()->user()->tenant_id,
             'conversation_id' => $conversation->id,
             'message_id'      => $response['messages'][0]['id'] ?? null,
             'direction'       => 'outgoing',
-            'message'         =>  $messageText,
+            'message'         => $messageText,
             'type'            => 'template',
-            'status'          => isset($response['messages'])
-                ? 'sent'
-                : 'failed',
+            'status'          => $isSuccess ? 'sent' : 'failed',
             'payload'         => $response,
         ]);
 
         WhatsappMessageLog::create([
-
-            'tenant_id' => auth()->user()->tenant_id,
-
-            'campaign_id' => null,
-
-            'contact_id' => $contact->id,
-
-            'message_id' => $response['messages'][0]['id'] ?? null,
-
+            'tenant_id'     => auth()->user()->tenant_id,
+            'campaign_id'   => null,
+            'contact_id'    => $contact->id,
+            'message_id'    => $response['messages'][0]['id'] ?? null,
             'template_name' => $template->name,
-
-            'recipient' => $contact->phone,
-
-            'status' => 'sent',
-
-            'sent_at' => now(),
-
-            'payload' => json_encode($response)
-
+            'recipient'     => $contact->phone,
+            'status'        => $isSuccess ? 'sent' : 'failed',
+            'sent_at'       => now(),
+            'error_message' => $errorMessage,
+            'payload'       => json_encode($response),
         ]);
 
         return response()->json([
-            'success'  => isset($response['messages']),
+            'success'  => $isSuccess,
+            'message'  => $isSuccess ? 'Template message sent successfully' : ($errorMessage ?? 'Failed to send template message via WhatsApp'),
             'payload'  => $payload,
             'response' => $response,
-        ]);
+        ], $isSuccess ? 200 : 400);
     }
 
     /**
