@@ -420,9 +420,6 @@ Route::middleware('auth:sanctum')->group(function () {
  * Used by Meta to verify webhook URL during setup
  */
 Route::get('/webhook/whatsapp', [WhatsappWebhookController::class, 'verify']);
-
-/**
- * WhatsApp webhook handler endpoint (POST)
- * Receives incoming messages and status updates from Meta
- */
 Route::post('/webhook/whatsapp', [WhatsappWebhookController::class, 'handle']);
+Route::get('/whatsapp/webhook', [WhatsappWebhookController::class, 'verify']);
+Route::post('/whatsapp/webhook', [WhatsappWebhookController::class, 'handle']);

@@ -19,6 +19,14 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->appendToGroup('api', [
             \App\Http\Middleware\CheckUserStatus::class,
         ]);
+        $middleware->validateCsrfTokens(except: [
+            'webhook/*',
+            'api/webhook/*',
+            'whatsapp/*',
+            'api/whatsapp/*',
+            'webhook/whatsapp',
+            'api/webhook/whatsapp',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

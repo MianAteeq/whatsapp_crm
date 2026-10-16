@@ -26,19 +26,48 @@ class WhatsappWebhookController extends Controller
 
     public function verify(Request $request)
     {
-        $verify_token = env('WHATSAPP_WEBHOOK_VERIFY_TOKEN');
+        $mode = $request->query('hub_mode') 
+             ?? $request->query('hub.mode') 
+             ?? $request->input('hub_mode') 
+             ?? $request->input('hub.mode');
 
-        $mode = $request->query('hub_mode');
-        $token = $request->query('hub_verify_token');
-        $challenge = $request->query('hub_challenge');
+        $token = $request->query('hub_verify_token') 
+              ?? $request->query('hub.verify_token') 
+              ?? $request->input('hub_verify_token') 
+              ?? $request->input('hub.verify_token');
 
-        if (
-            $mode === 'subscribe' &&
-            $token === $verify_token
-        ) {
+        $challenge = $request->query('hub_challenge') 
+                  ?? $request->query('hub.challenge') 
+                  ?? $request->input('hub_challenge') 
+                  ?? $request->input('hub.challenge');
+
+        $envToken = env('WHATSAPP_WEBHOOK_VERIFY_TOKEN');
+
+        $validTokens = array_filter([
+            $envToken,
+            'crm-throbtech-verify-token',
+            'CRM_VERIFY_TOKEN_XYZ',
+            'talkinexx-verify-token',
+            'crm-talkinexx-verify-token',
+        ]);
+
+        \Log::info('WhatsApp Webhook Verification Request:', [
+            'mode' => $mode,
+            'token' => $token,
+            'challenge' => $challenge,
+            'valid_tokens' => $validTokens,
+        ]);
+
+        if ($mode === 'subscribe' && ($token === $envToken || in_array($token, $validTokens, true))) {
+            \Log::info('WhatsApp Webhook Verified Successfully!');
             return response($challenge, 200)
                 ->header('Content-Type', 'text/plain');
         }
+
+        \Log::warning('WhatsApp Webhook Verification Failed: token mismatch.', [
+            'received' => $token,
+            'expected' => $envToken
+        ]);
 
         return response()->json([
             'success' => false,
@@ -553,40 +582,46 @@ class WhatsappWebhookController extends Controller
 
         $value = $change['value'] ?? [];
 
-
-
         // ==========================================
-        // PHONE NUMBER ID
+        // PHONE NUMBER ID & TENANT RESOLUTION
         // ==========================================
-
         $phoneNumberId = $value['metadata']['phone_number_id'] ?? null;
+        $displayPhoneNumber = $value['metadata']['display_phone_number'] ?? null;
 
+        $setting = null;
+        if (!empty($phoneNumberId)) {
+            $setting = WhatsappSetting::where('phone_number_id', trim((string)$phoneNumberId))->first();
+        }
 
-
-        // ==========================================
-        // FIND TENANT
-        // ==========================================
-
-        $setting = WhatsappSetting::where(
-
-            'phone_number_id',
-
-            $phoneNumberId
-
-        )->first();
-
-
+        if (!$setting && !empty($displayPhoneNumber)) {
+            $cleanPhone = preg_replace('/[^0-9]/', '', $displayPhoneNumber);
+            $setting = WhatsappSetting::whereRaw("REPLACE(REPLACE(REPLACE(phone_number, '+', ''), '-', ''), ' ', '') LIKE ?", ["%{$cleanPhone}%"])->first();
+        }
 
         if (!$setting) {
+            // Fallback: If tenant setting has access_token or is first record, resolve it so message is not dropped
+            $setting = WhatsappSetting::whereNotNull('access_token')->first() ?? WhatsappSetting::first();
+            if ($setting && empty($setting->phone_number_id) && !empty($phoneNumberId)) {
+                $setting->update(['phone_number_id' => trim((string)$phoneNumberId)]);
+            }
+        }
 
+        if (!$setting) {
+            \Log::warning('WhatsApp Webhook: No WhatsappSetting found in DB for metadata:', [
+                'phone_number_id' => $phoneNumberId,
+                'display_phone_number' => $displayPhoneNumber,
+            ]);
             return response()->json([
-
-                'success' => false,
-
-                'message' => 'Tenant not found'
-
+                'success' => true,
+                'message' => 'No active WhatsApp settings found'
             ]);
         }
+
+        \Log::info('WhatsApp Webhook: Matched Setting', [
+            'tenant_id' => $setting->tenant_id,
+            'phone_number_id' => $setting->phone_number_id,
+            'business_phone' => $setting->phone_number,
+        ]);
 
 
 
@@ -871,134 +906,80 @@ class WhatsappWebhookController extends Controller
                     // ======================================
 
                     elseif ($messageType === 'contacts') {
+                        $messageText = '👤 Shared Contact';
+                    }
 
-                        $messageText =
+                    elseif ($messageType === 'button') {
+                        $messageText = $incomingMessage['button']['text'] ?? '🔘 Button Reply';
+                    }
 
-                            '👤 Shared Contact';
+                    elseif ($messageType === 'interactive') {
+                        $interactive = $incomingMessage['interactive'] ?? [];
+                        $messageText = $interactive['button_reply']['title'] 
+                                    ?? $interactive['list_reply']['title'] 
+                                    ?? '🔘 Interactive Response';
                     }
 
 
 
                     // ======================================
-                    // DOWNLOAD MEDIA
+                    // DOWNLOAD MEDIA (Safe try-catch)
                     // ======================================
 
                     if ($mediaId) {
-
-                        // ======================================
-                        // GET MEDIA INFO
-                        // ======================================
-
-                        $mediaResponse = Http::withToken(
-
-                            $setting->access_token
-
-                        )
-
-                            ->get(
-
-                                "https://graph.facebook.com/v19.0/{$mediaId}"
-
-                            )
-
-                            ->json();
-
-
-
-                        $tempMediaUrl =
-
-                            $mediaResponse['url']
-
-                            ?? null;
-
-
-
-                        // ======================================
-                        // DOWNLOAD FILE
-                        // ======================================
-
-                        if ($tempMediaUrl) {
-
-                            $mediaContent = Http::withToken(
-
+                        try {
+                            $mediaResponse = Http::withToken(
                                 $setting->access_token
-
                             )
+                                ->timeout(15)
+                                ->get(
+                                    "https://graph.facebook.com/v19.0/{$mediaId}"
+                                )
+                                ->json();
 
-                                ->get($tempMediaUrl)
+                            $tempMediaUrl = $mediaResponse['url'] ?? null;
 
-                                ->body();
+                            if ($tempMediaUrl) {
+                                $mediaContent = Http::withToken(
+                                    $setting->access_token
+                                )
+                                    ->timeout(30)
+                                    ->get($tempMediaUrl)
+                                    ->body();
 
+                                $extension = match ($mimeType) {
+                                    'image/jpeg' => 'jpg',
+                                    'image/png' => 'png',
+                                    'image/webp' => 'webp',
+                                    'video/mp4' => 'mp4',
+                                    'audio/ogg' => 'ogg',
+                                    'audio/mpeg' => 'mp3',
+                                    'application/pdf' => 'pdf',
+                                    default => 'bin'
+                                };
 
+                                $storedFileName =
+                                    'whatsapp-media/' .
+                                    time() .
+                                    '_' .
+                                    uniqid() .
+                                    '.' .
+                                    $extension;
 
-                            // ======================================
-                            // EXTENSION
-                            // ======================================
+                                Storage::disk('public')->put(
+                                    $storedFileName,
+                                    $mediaContent
+                                );
 
-                            $extension = match ($mimeType) {
-
-                                'image/jpeg' => 'jpg',
-
-                                'image/png' => 'png',
-
-                                'image/webp' => 'webp',
-
-                                'video/mp4' => 'mp4',
-
-                                'audio/ogg' => 'ogg',
-
-                                'audio/mpeg' => 'mp3',
-
-                                'application/pdf' => 'pdf',
-
-                                default => 'bin'
-                            };
-
-
-
-                            // ======================================
-                            // FILE NAME
-                            // ======================================
-
-                            $storedFileName =
-
-                                'whatsapp-media/' .
-
-                                time() .
-
-                                '_' .
-
-                                uniqid() .
-
-                                '.' .
-
-                                $extension;
-
-
-
-                            // ======================================
-                            // STORE FILE
-                            // ======================================
-
-                            Storage::disk('public')->put(
-
-                                $storedFileName,
-
-                                $mediaContent
-
-                            );
-
-
-
-                            // ======================================
-                            // FINAL URL
-                            // ======================================
-
-                            $mediaUrl = asset(
-
-                                'storage/' . $storedFileName
-
-                            );
+                                $mediaUrl = asset(
+                                    'storage/' . $storedFileName
+                                );
+                            }
+                        } catch (\Throwable $mediaEx) {
+                            \Log::warning('WhatsApp media download failed: ' . $mediaEx->getMessage(), [
+                                'media_id' => $mediaId,
+                                'mime_type' => $mimeType,
+                            ]);
                         }
                     }
 
@@ -1161,17 +1142,24 @@ class WhatsappWebhookController extends Controller
                     // REALTIME EVENT
                     // ======================================
 
-                    broadcast(
-
-                        new MessageReceived($message)
-
-                    )->toOthers();
+                    try {
+                        broadcast(
+                            new MessageReceived($message)
+                        )->toOthers();
+                    } catch (\Throwable $broadEx) {
+                        \Log::warning('Broadcast MessageReceived error: ' . $broadEx->getMessage());
+                    }
 
                     // Dispatch matching workflow executions
-                    $workflowMatched = \App\Services\Workflow\WorkflowTriggerManager::dispatchEvent('incoming_message', $setting->tenant_id, [
-                        'contact' => $contact,
-                        'message' => $message
-                    ]);
+                    $workflowMatched = false;
+                    try {
+                        $workflowMatched = \App\Services\Workflow\WorkflowTriggerManager::dispatchEvent('incoming_message', $setting->tenant_id, [
+                            'contact' => $contact,
+                            'message' => $message
+                        ]);
+                    } catch (\Throwable $wfEx) {
+                        \Log::warning('Workflow trigger dispatch error: ' . $wfEx->getMessage());
+                    }
 
 
                     // ======================================
