@@ -43,6 +43,11 @@ class WhatsappSettingController extends Controller
             ]
         );
 
+        if ($setting->is_connected && $setting->access_token && $setting->business_account_id) {
+            $this->executeWabaSubscription($setting);
+            $setting->refresh();
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'WhatsApp API connected successfully',
@@ -140,6 +145,11 @@ class WhatsappSettingController extends Controller
                     'is_registered'       => $isRegistered,
                 ]
             );
+
+            if ($setting->is_connected && $setting->access_token && $setting->business_account_id) {
+                $this->executeWabaSubscription($setting);
+                $setting->refresh();
+            }
 
             return response()->json([
                 'success' => true,
@@ -505,6 +515,12 @@ class WhatsappSettingController extends Controller
             } catch (\Throwable $e) {
                 \Illuminate\Support\Facades\Log::warning('[WhatsApp Auto-Fetch] Failed to fetch phone number info: ' . $e->getMessage());
             }
+        }
+
+        // Auto-subscribe and verify WABA if connected but not yet marked as subscribed
+        if ($setting->is_connected && $setting->access_token && $setting->business_account_id && (!$setting->is_waba_subscribed || $forceSync)) {
+            $this->executeWabaSubscription($setting);
+            $setting->refresh();
         }
 
         return [
