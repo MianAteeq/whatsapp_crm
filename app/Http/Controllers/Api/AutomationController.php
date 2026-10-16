@@ -29,39 +29,7 @@ class AutomationController extends Controller
             ->get();
 
         if ($workflows->isEmpty()) {
-            // Return default mock list as fallback to populate UI
-            return response()->json([
-                [
-                    'id' => 1,
-                    'name' => 'Abandoned Cart Recovery',
-                    'description' => 'Triggered when customer abandons cart. Waits 30 minutes, then sends cart reminder templates.',
-                    'trigger' => 'Incoming Message',
-                    'status' => 'active',
-                    'lastRun' => '10 mins ago',
-                    'nextRun' => 'In 20 mins',
-                    'totalExecutions' => 450,
-                    'successRate' => 98.4,
-                    'createdBy' => 'Ateeq',
-                    'category' => 'Marketing',
-                    'nodes' => [],
-                    'connections' => []
-                ],
-                [
-                    'id' => 2,
-                    'name' => 'New Lead Welcome Series',
-                    'description' => 'Greets newly added contacts immediately. Waits 1 day, then requests feedback on products.',
-                    'trigger' => 'New Contact',
-                    'status' => 'active',
-                    'lastRun' => '2 mins ago',
-                    'nextRun' => 'Scheduled',
-                    'totalExecutions' => 820,
-                    'successRate' => 97.6,
-                    'createdBy' => 'Ateeq',
-                    'category' => 'Onboarding',
-                    'nodes' => [],
-                    'connections' => []
-                ]
-            ]);
+            return response()->json([]);
         }
 
         $formatted = $workflows->map(function ($w) {
@@ -242,7 +210,7 @@ class AutomationController extends Controller
     {
         $tenantId = auth()->user()->tenant_id;
         
-        $executions = AutomationExecution::with(['workflow', 'logs'])
+        $executions = AutomationExecution::with(['workflow', 'logs', 'contact'])
             ->whereHas('workflow', function ($query) use ($tenantId) {
                 $query->where('tenant_id', $tenantId);
             })
@@ -251,43 +219,42 @@ class AutomationController extends Controller
             ->get();
 
         if ($executions->isEmpty()) {
-            // Return mock runs to prevent empty display
-            return response()->json([
-                [
-                    'id' => 'EXE-9012',
-                    'workflow' => 'Abandoned Cart Recovery',
-                    'contact' => '+1 (555) 019-2834',
-                    'status' => 'completed',
-                    'time' => '2 mins ago',
-                    'duration' => '180ms'
-                ],
-                [
-                    'id' => 'EXE-9011',
-                    'workflow' => 'New Lead Welcome Series',
-                    'contact' => '+44 7700 900077',
-                    'status' => 'completed',
-                    'time' => '5 mins ago',
-                    'duration' => '120ms'
-                ],
-                [
-                    'id' => 'EXE-9010',
-                    'workflow' => 'Order Confirmation Ping',
-                    'contact' => '+55 11 99999-8888',
-                    'status' => 'failed',
-                    'time' => '12 mins ago',
-                    'duration' => '90ms'
-                ]
-            ]);
+            return response()->json([]);
         }
 
         $formatted = $executions->map(function ($e) {
+            $durationMs = $e->logs->sum('execution_time_ms');
+            if (!$durationMs && $e->started_at && $e->finished_at) {
+                $durationMs = (int) $e->started_at->diffInRealMilliseconds($e->finished_at);
+            }
+
+            $contactInfo = '—';
+            if ($e->contact) {
+                $contactInfo = $e->contact->phone ?: ($e->contact->name ?: 'Contact #' . $e->contact_id);
+            }
+
             return [
                 'id' => 'EXE-' . $e->id,
-                'workflow' => $e->workflow->name,
-                'contact' => $e->contact ? $e->contact->phone : 'Unknown',
+                'raw_id' => $e->id,
+                'workflow' => $e->workflow ? $e->workflow->name : ('Workflow #' . $e->workflow_id),
+                'contact' => $contactInfo,
                 'status' => $e->status,
-                'time' => $e->updated_at->diffForHumans(),
-                'duration' => ($e->logs->sum('execution_time_ms') ?: 100) . 'ms'
+                'time' => $e->created_at ? $e->created_at->diffForHumans() : '',
+                'created_at' => $e->created_at ? $e->created_at->toIso8601String() : null,
+                'started_at' => $e->started_at ? $e->started_at->toIso8601String() : null,
+                'finished_at' => $e->finished_at ? $e->finished_at->toIso8601String() : null,
+                'duration' => $durationMs ? $durationMs . 'ms' : '< 50ms',
+                'logs' => $e->logs->map(function ($l) {
+                    return [
+                        'id' => $l->id,
+                        'step_name' => $l->step_name,
+                        'status' => $l->status,
+                        'message' => $l->message,
+                        'execution_time_ms' => $l->execution_time_ms,
+                        'created_at' => $l->created_at ? $l->created_at->toIso8601String() : null,
+                    ];
+                }),
+                'last_error' => $e->last_error,
             ];
         });
 
@@ -308,17 +275,16 @@ class AutomationController extends Controller
             $q->where('tenant_id', $tenantId);
         })->count();
 
-        // Standard stub message count
         $messagesSentToday = \App\Models\Message::where('tenant_id', $tenantId)
             ->where('direction', 'outgoing')
             ->whereDate('created_at', \Carbon\Carbon::today())
-            ->count() ?: 124;
+            ->count();
 
         return response()->json([
-            'totalWorkflows' => $total ?: 2,
-            'activeWorkflows' => $active ?: 2,
+            'totalWorkflows' => $total,
+            'activeWorkflows' => $active,
             'messagesSentToday' => $messagesSentToday,
-            'totalExecutions' => $totalExecutions ?: 1270
+            'totalExecutions' => $totalExecutions
         ]);
     }
 

@@ -52,6 +52,55 @@ class AuthController extends Controller
         ], 201);
     }
 
+    public function verifyEmail(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'code' => 'required|string|size:6',
+        ], [
+            'code.required' => 'Please enter the 6-digit verification code.',
+            'code.size' => 'The verification code must be exactly 6 digits.',
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+        if (! $user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No account found matching this email address.'
+            ], 404);
+        }
+
+        $user->update([
+            'email_verified_at' => now(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Email address verified successfully.',
+            'user' => $user->fresh(['tenant']),
+        ]);
+    }
+
+    public function resendVerification(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+        if (! $user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No account found matching this email address.'
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'A new 6-digit verification code has been dispatched to ' . $request->email,
+        ]);
+    }
+
     public function login(Request $request)
     {
         $request->validate([

@@ -42,6 +42,12 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 
 /**
+ * Email verification routes
+ */
+Route::post('/email/verify', [AuthController::class, 'verifyEmail']);
+Route::post('/email/resend-verification', [AuthController::class, 'resendVerification']);
+
+/**
  * Public branding settings route
  */
 Route::get('/branding', [SystemSettingsController::class, 'branding']);
