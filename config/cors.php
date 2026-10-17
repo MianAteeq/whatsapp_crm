@@ -28,7 +28,7 @@ return [
         'https://crm.talkinexx.com',
         'https://website.talkinexx.com',
         'https://throbtech.com',
-        'https://www.throbtech.com',
+        'https://www.throbtech.com'
     ],
 
     'allowed_origins_patterns' => [],
