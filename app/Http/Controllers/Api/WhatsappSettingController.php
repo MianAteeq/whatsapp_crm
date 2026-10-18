@@ -541,17 +541,19 @@ class WhatsappSettingController extends Controller
             'has_openai_key'       => !empty(\App\Services\OpenAiService::resolveApiKey($setting->openai_key)),
             'is_universal_openai'  => !empty(config('services.openai.api_key') ?: env('OPENAI_API_KEY')),
             'company_prompt'       => $setting->company_prompt,
+            'reply_language'       => $setting->reply_language ?? 'ar-SA',
         ];
     }
 
     /**
-     * Create or update WhatsApp AI configurations (OpenAI key, company prompt).
+     * Create or update WhatsApp AI configurations (OpenAI key, company prompt, reply language).
      */
     public function updateAiSettings(Request $request)
     {
         $request->validate([
             'openai_key'     => 'nullable|string',
             'company_prompt' => 'nullable|string',
+            'reply_language' => 'nullable|string',
         ]);
 
         $existing = WhatsappSetting::where('tenant_id', auth()->user()->tenant_id)->first();
@@ -563,11 +565,14 @@ class WhatsappSettingController extends Controller
             $openaiKey = $existing->openai_key;
         }
 
+        $replyLang = $request->reply_language ?? ($existing?->reply_language ?? 'ar-SA');
+
         $setting = WhatsappSetting::updateOrCreate(
             ['tenant_id' => auth()->user()->tenant_id],
             [
                 'openai_key'     => $openaiKey,
                 'company_prompt' => $request->company_prompt,
+                'reply_language' => $replyLang,
             ]
         );
 

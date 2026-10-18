@@ -39,14 +39,17 @@ class OpenAiService
      * @param string $companyPrompt
      * @param int $conversationId
      * @param string $incomingMessageText
+     * @param string $replyLanguage
      * @return string
      */
-    public function generateResponse(?string $openAiKey, string $companyPrompt, int $conversationId, string $incomingMessageText): string
+    public function generateResponse(?string $openAiKey, string $companyPrompt, int $conversationId, string $incomingMessageText, string $replyLanguage = 'ar-SA'): string
     {
         $activeKey = !empty($openAiKey) && !str_contains($openAiKey, '•') ? $openAiKey : self::resolveApiKey($openAiKey);
         if (empty($activeKey)) {
             \Log::warning('[AI] No DeepSeek/AI API Key found (universal or vendor-level).');
-            return 'Thank you for your message. We will get back to you shortly.';
+            return str_starts_with(strtolower($replyLanguage), 'ar')
+                ? 'شكرًا لتواصلك معنا. سنقوم بالرد عليك في أقرب وقت ممكن.'
+                : 'Thank you for your message. We will get back to you shortly.';
         }
 
         // Fetch recent messages for context (last 10 messages)
@@ -56,11 +59,16 @@ class OpenAiService
             ->get()
             ->reverse();
 
+        $langInstruction = str_starts_with(strtolower($replyLanguage), 'ar')
+            ? "CRITICAL LANGUAGE INSTRUCTION: You MUST compose your reply in authentic, professional Saudi Arabic (العربية - المملكة العربية السعودية). Use natural, courteous phrasing. Keep numbers and technical references accurate."
+            : "CRITICAL LANGUAGE INSTRUCTION: You MUST compose your reply in professional, helpful English.";
+
         $messagesForAi = [
             [
                 'role' => 'system',
                 'content' => "You are an AI assistant for a company. Here is the context/information about our company:\n\n" 
                            . $companyPrompt 
+                           . "\n\n" . $langInstruction
                            . "\n\nReply to the customer's message politely, professionally, and helpfully using only the company context provided. Keep the response concise, suitable for WhatsApp, and conversational. Do not make up any facts or information not included in the company prompt. If you do not know the answer or if the information is not provided in the context, politely inform them that you'll refer them to a human representative shortly."
             ]
         ];

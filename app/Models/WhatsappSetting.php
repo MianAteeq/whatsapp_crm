@@ -20,6 +20,7 @@ class WhatsappSetting extends Model
         'messaging_limit_tier',
         'openai_key',
         'company_prompt',
+        'reply_language',
     ];
 
     protected $casts = [

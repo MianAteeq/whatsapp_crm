@@ -1174,7 +1174,8 @@ class WhatsappWebhookController extends Controller
                                 $activeOpenAiKey,
                                 $setting->company_prompt,
                                 $conversation->id,
-                                $messageText
+                                $messageText,
+                                $setting->reply_language ?? 'ar-SA'
                             );
 
                           \Log::info('WhatsApp replyText', [

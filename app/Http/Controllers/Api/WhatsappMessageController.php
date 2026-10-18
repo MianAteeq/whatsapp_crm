@@ -635,7 +635,8 @@ class WhatsappMessageController extends Controller
                     $activeOpenAiKey,
                     $setting->company_prompt,
                     $conversation->id,
-                    $replyText
+                    $replyText,
+                    $setting->reply_language ?? 'ar-SA'
                 );
 
                 $autoReplyMsg = Message::create([
