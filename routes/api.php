@@ -398,6 +398,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('email/campaigns/{id}/pause', [EmailCampaignController::class, 'pause']);
     Route::post('email/campaigns/{id}/resume', [EmailCampaignController::class, 'resume']);
     Route::post('email/campaigns/{id}/cancel', [EmailCampaignController::class, 'cancel']);
+    Route::post('email/campaigns/{id}/retry-failed', [EmailCampaignController::class, 'retryFailed']);
     Route::post('email/campaigns/{id}/duplicate', [EmailCampaignController::class, 'duplicate']);
     Route::get('email/campaigns/{id}/report', [EmailCampaignController::class, 'report']);
     Route::apiResource('email/campaigns', EmailCampaignController::class);

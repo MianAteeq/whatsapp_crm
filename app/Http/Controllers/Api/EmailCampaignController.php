@@ -432,6 +432,53 @@ class EmailCampaignController extends Controller
     }
 
     /**
+     * Retry failed recipients for a campaign
+     */
+    public function retryFailed(Request $request, int $id): JsonResponse
+    {
+        $tenantId = (int)$request->user()->tenant_id;
+        $campaign = EmailCampaign::where('tenant_id', $tenantId)->findOrFail($id);
+
+        $domainService = app(\App\Services\Email\MailtrapDomainService::class);
+        $domainCheck = $domainService->validateDomainForSending($tenantId, $campaign->from_email, $campaign->sending_domain_id);
+        if (!$domainCheck['allowed']) {
+            return response()->json([
+                'success' => false,
+                'error' => $domainCheck['message'],
+            ], 422);
+        }
+
+        $resetCount = EmailCampaignRecipient::where('tenant_id', $tenantId)
+            ->where('campaign_id', $campaign->id)
+            ->where('status', EmailCampaignRecipient::STATUS_FAILED)
+            ->update([
+                'status' => EmailCampaignRecipient::STATUS_PENDING,
+                'error_message' => null,
+                'failed_at' => null,
+            ]);
+
+        if ($resetCount === 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No failed recipients found to retry in this campaign.',
+            ], 400);
+        }
+
+        $campaign->update([
+            'status' => EmailCampaign::STATUS_SENDING,
+            'completed_at' => null,
+        ]);
+
+        \App\Jobs\ProcessEmailCampaignJob::dispatch($campaign->id);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Successfully queued {$resetCount} failed recipients for retry.",
+            'data' => $campaign->fresh(),
+        ]);
+    }
+
+    /**
      * Detailed analytics report
      */
     public function report(Request $request, int $id): JsonResponse
