@@ -26,7 +26,7 @@ return [
         'http://127.0.0.1:8000',
         'https://talkinexx.com',
         'https://crm.talkinexx.com',
-        'https://website.talkinexx.com'
+        'https://website.talkinexx.com',
         'https://throbtech.com',
         'https://www.throbtech.com',
     ],
