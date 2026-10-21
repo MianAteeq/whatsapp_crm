@@ -96,6 +96,27 @@ class WebsiteEmailExtractorService
     }
 
     /**
+     * Extract email(s) from a single URL (convenience alias for single-record enrichment)
+     *
+     * @param string $websiteUrl
+     * @param array $options
+     * @return array ['success' => bool, 'email' => ?string, 'primary_email' => ?string, 'email_source' => ?string, 'emails' => array, 'error' => ?string]
+     */
+    public function extractFromUrl(string $websiteUrl, array $options = []): array
+    {
+        $result = $this->extractEmails($websiteUrl, $options);
+
+        return [
+            'success' => $result['success'] ?? false,
+            'email' => $result['primary_email'] ?? null,
+            'primary_email' => $result['primary_email'] ?? null,
+            'email_source' => $result['email_source'] ?? null,
+            'emails' => $result['emails'] ?? [],
+            'error' => $result['error'] ?? null,
+        ];
+    }
+
+    /**
      * Extract emails from a website with mode and timeout options
      *
      * @param string $websiteUrl

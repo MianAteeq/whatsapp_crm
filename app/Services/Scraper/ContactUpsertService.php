@@ -882,13 +882,46 @@ class ContactUpsertService
 
         $enrichedFields = [];
 
+        // Enrich domain if missing
+        if (empty($business->website_domain) && !empty($business->website)) {
+            $domain = $this->emailExtractor->extractDomain($business->website);
+            if ($domain) {
+                $business->website_domain = $domain;
+                $enrichedFields[] = 'website_domain';
+            }
+        }
+
+        // Enrich email from website
         if (in_array('email', $missing) && !empty($business->website)) {
             $extracted = $this->emailExtractor->extractFromUrl($business->website);
-            if (!empty($extracted['email'])) {
-                $business->email = $extracted['email'];
-                $business->email_normalized = strtolower(trim($extracted['email']));
-                $business->email_source = 'Website Scrape (Enriched)';
+            $foundEmail = $extracted['email'] ?? $extracted['primary_email'] ?? null;
+
+            if (!empty($foundEmail)) {
+                $business->email = $foundEmail;
+                $business->email_normalized = strtolower(trim($foundEmail));
+                $business->email_source = $extracted['email_source'] ?? 'Website Scrape (Enriched)';
+                $business->status = 'email_found';
+                $business->failure_reason = null;
                 $enrichedFields[] = 'email';
+
+                if (!empty($extracted['emails'])) {
+                    foreach ($extracted['emails'] as $em) {
+                        ScraperBusinessEmail::firstOrCreate(
+                            [
+                                'scraped_business_id' => $business->id,
+                                'email' => $em['email'],
+                            ],
+                            [
+                                'email_normalized' => $em['email_normalized'] ?? strtolower(trim($em['email'])),
+                                'is_primary' => (($em['email_normalized'] ?? strtolower(trim($em['email']))) === $business->email_normalized),
+                                'source' => $em['source'] ?? ($extracted['email_source'] ?? 'Website Scrape (Enriched)'),
+                                'source_page' => $em['source_page'] ?? null,
+                            ]
+                        );
+                    }
+                }
+            } elseif ($business->status === 'pending') {
+                $business->status = 'no_email_found';
             }
         }
 
