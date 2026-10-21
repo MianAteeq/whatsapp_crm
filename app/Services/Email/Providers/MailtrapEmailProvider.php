@@ -21,6 +21,14 @@ class MailtrapEmailProvider implements EmailProviderInterface
         $this->apiToken = $this->apiToken ?: (config('services.mailtrap.api_token') ?: env('MAILTRAP_API_TOKEN'));
         $this->webhookSecret = $this->webhookSecret ?: (config('services.mailtrap.webhook_secret') ?: env('MAILTRAP_WEBHOOK_SECRET'));
         $this->sendingDomain = $this->sendingDomain ?: (config('services.mailtrap.domain') ?: env('MAILTRAP_DOMAIN'));
+
+        // Sanitize token (trim whitespace, quotes, and optional 'Bearer ' prefix)
+        if (!empty($this->apiToken)) {
+            $this->apiToken = trim((string)$this->apiToken, " \t\n\r\0\x0B\"'");
+            if (str_starts_with(strtolower($this->apiToken), 'bearer ')) {
+                $this->apiToken = trim(substr($this->apiToken, 7));
+            }
+        }
     }
 
     /**
@@ -105,6 +113,7 @@ class MailtrapEmailProvider implements EmailProviderInterface
 
             $response = Http::withToken($this->apiToken)
                 ->withHeaders([
+                    'Api-Token' => $this->apiToken,
                     'Content-Type' => 'application/json',
                     'Accept' => 'application/json',
                 ])
@@ -156,6 +165,11 @@ class MailtrapEmailProvider implements EmailProviderInterface
                 $errorMessage .= ': ' . $data['message'];
             } else {
                 $errorMessage .= ': ' . $response->body();
+            }
+
+            if ($response->status() === 401) {
+                $maskedToken = !empty($this->apiToken) ? substr($this->apiToken, 0, 4) . '••••' . substr($this->apiToken, -4) : 'EMPTY';
+                $errorMessage .= " [Token used: {$maskedToken}]";
             }
 
             if ($response->status() === 403 && str_contains(strtolower($errorMessage), 'compliance review')) {

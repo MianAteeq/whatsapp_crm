@@ -19,10 +19,16 @@ class EmailProviderFactory
             $provider = strtolower((string)$setting->provider);
 
             if ($provider === 'mailtrap') {
+                $dbToken = !empty($setting->mailtrap_api_token) ? trim((string)$setting->mailtrap_api_token) : null;
+                $dbKey = !empty($setting->api_key) ? trim((string)$setting->api_key) : null;
+                $envToken = trim((string)(config('services.mailtrap.api_token') ?: env('MAILTRAP_API_TOKEN') ?: ''));
+
+                $resolvedToken = $dbToken ?: ($dbKey ?: ($envToken ?: null));
+
                 return new \App\Services\Email\Providers\MailtrapEmailProvider(
-                    apiToken: $setting->mailtrap_api_token ?: $setting->api_key,
-                    webhookSecret: $setting->mailtrap_webhook_secret,
-                    sendingDomain: $setting->mailtrap_domain ?: $setting->api_domain
+                    apiToken: $resolvedToken,
+                    webhookSecret: $setting->mailtrap_webhook_secret ?: (config('services.mailtrap.webhook_secret') ?: env('MAILTRAP_WEBHOOK_SECRET')),
+                    sendingDomain: $setting->mailtrap_domain ?: ($setting->api_domain ?: (config('services.mailtrap.domain') ?: env('MAILTRAP_DOMAIN')))
                 );
             }
 
