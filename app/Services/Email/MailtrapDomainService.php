@@ -20,27 +20,19 @@ class MailtrapDomainService
      */
     public function resolveApiToken(?int $tenantId = null): string
     {
+        $globalToken = config('services.mailtrap.api_token') ?: env('MAILTRAP_API_TOKEN');
+        if (!empty($globalToken)) {
+            return trim($globalToken);
+        }
+
         if ($tenantId) {
             $setting = EmailSetting::where('tenant_id', $tenantId)->first();
             if ($setting && !empty($setting->mailtrap_api_token)) {
-                return $setting->mailtrap_api_token;
+                return trim($setting->mailtrap_api_token);
             }
         }
 
-        $globalToken = config('services.mailtrap.api_token') ?: env('MAILTRAP_API_TOKEN');
-        if (!empty($globalToken)) {
-            return $globalToken;
-        }
-
-        // Fallback: Check if any other tenant configured a mailtrap token
-        $anySetting = EmailSetting::whereNotNull('mailtrap_api_token')
-            ->where('mailtrap_api_token', '!=', '')
-            ->first();
-        if ($anySetting) {
-            return $anySetting->mailtrap_api_token;
-        }
-
-        throw new RuntimeException('Mailtrap API Token is not configured. Please add it in Email Settings.');
+        throw new RuntimeException('Mailtrap API Token is not configured. Please add MAILTRAP_API_TOKEN in your .env file.');
     }
 
     /**
