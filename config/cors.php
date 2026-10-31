@@ -28,7 +28,8 @@ return [
         'https://crm.talkinexx.com',
         'https://website.talkinexx.com',
         'https://throbtech.com',
-        'https://www.throbtech.com'
+        'https://www.throbtech.com',
+        'http://localhost:3000'
     ],
 
     'allowed_origins_patterns' => [],
