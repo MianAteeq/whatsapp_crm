@@ -52,8 +52,35 @@ class BusinessDiscoveryEngine
         }
 
         $cacheKey = 'scraper_geo_' . md5(strtolower($cleanLocation));
-        return Cache::remember($cacheKey, 86400 * 7, function () use ($cleanLocation) {
-            // 1. Try Google Geocoding API if key configured
+        return Cache::remember($cacheKey, 86400 * 30, function () use ($cleanLocation) {
+            // 1. Primary: OpenStreetMap Nominatim (Free, high accuracy, saves $5/1k Google Geocoding calls)
+            try {
+                $osmUrl = 'https://nominatim.openstreetmap.org/search';
+                $osmRes = Http::withHeaders([
+                    'User-Agent' => 'SaaS-CRM-Lead-Scraper/2.0',
+                    'Accept' => 'application/json',
+                ])
+                ->timeout(6)
+                ->get($osmUrl, [
+                    'q' => $cleanLocation,
+                    'format' => 'json',
+                    'limit' => 1,
+                ]);
+
+                if ($osmRes->successful() && !empty($osmRes->json('0'))) {
+                    $item = $osmRes->json('0');
+                    Log::channel('scraper')->info("Nominatim Geocoding resolved '{$cleanLocation}' to ({$item['lat']}, {$item['lon']}) [Free]");
+                    return [
+                        'lat' => (float) $item['lat'],
+                        'lng' => (float) $item['lon'],
+                        'formatted_address' => $item['display_name'] ?? $cleanLocation,
+                    ];
+                }
+            } catch (\Throwable $e) {
+                Log::channel('scraper')->warning("Nominatim Geocoding failed for '{$cleanLocation}': " . $e->getMessage());
+            }
+
+            // 2. Fallback: Google Geocoding API if key configured
             if (!empty($this->apiKey)) {
                 try {
                     $url = 'https://maps.googleapis.com/maps/api/geocode/json';
@@ -77,33 +104,6 @@ class BusinessDiscoveryEngine
                 } catch (\Throwable $e) {
                     Log::channel('scraper')->warning("Google Geocoding failed for '{$cleanLocation}': " . $e->getMessage());
                 }
-            }
-
-            // 2. Reliable Fallback: OpenStreetMap Nominatim
-            try {
-                $osmUrl = 'https://nominatim.openstreetmap.org/search';
-                $osmRes = Http::withHeaders([
-                    'User-Agent' => 'SaaS-CRM-Lead-Scraper/2.0',
-                    'Accept' => 'application/json',
-                ])
-                ->timeout(8)
-                ->get($osmUrl, [
-                    'q' => $cleanLocation,
-                    'format' => 'json',
-                    'limit' => 1,
-                ]);
-
-                if ($osmRes->successful() && !empty($osmRes->json('0'))) {
-                    $item = $osmRes->json('0');
-                    Log::channel('scraper')->info("Nominatim Geocoding resolved '{$cleanLocation}' to ({$item['lat']}, {$item['lon']})");
-                    return [
-                        'lat' => (float) $item['lat'],
-                        'lng' => (float) $item['lon'],
-                        'formatted_address' => $item['display_name'] ?? $cleanLocation,
-                    ];
-                }
-            } catch (\Throwable $e) {
-                Log::channel('scraper')->warning("Nominatim Geocoding failed for '{$cleanLocation}': " . $e->getMessage());
             }
 
             // Fallback coordinate approximations for common major metropolitan hubs
@@ -149,26 +149,6 @@ class BusinessDiscoveryEngine
         string $searchMode = 'standard'
     ): array {
         $radiusMeters = max(1000, $radiusMeters);
-        $isDeep = ($searchMode === 'deep');
-
-        // Determine step distance (meters) between cell centers
-        if ($radiusMeters <= 5000) {
-            $step = $isDeep ? 1800 : 2500;
-            $cellRadius = 2200;
-        } elseif ($radiusMeters <= 10000) {
-            $step = $isDeep ? 2800 : 3800;
-            $cellRadius = 3200;
-        } elseif ($radiusMeters <= 25000) {
-            $step = $isDeep ? 4200 : 5500;
-            $cellRadius = 4800;
-        } elseif ($radiusMeters <= 50000) {
-            $step = $isDeep ? 7000 : 9500;
-            $cellRadius = 8000;
-        } else {
-            // Extended 100km
-            $step = $isDeep ? 12000 : 16000;
-            $cellRadius = 14000;
-        }
 
         // Earth constants: 1 deg lat ~ 111320 meters
         $metersPerDegreeLat = 111320.0;
@@ -177,77 +157,91 @@ class BusinessDiscoveryEngine
             $metersPerDegreeLng = 111320.0;
         }
 
-        $halfLatSpan = ($cellRadius * 1.15) / $metersPerDegreeLat;
-        $halfLngSpan = ($cellRadius * 1.15) / $metersPerDegreeLng;
-
         $cells = [];
         $index = 1;
 
-        // 1. Center cell
+        // 1. Center Core Hub (Zone 1)
+        $centerRadius = (int) max(1500, min(8000, round($radiusMeters * 0.35)));
         $cells[] = [
             'id' => $index++,
-            'lat' => $centerLat,
-            'lng' => $centerLng,
-            'radius' => $cellRadius,
+            'lat' => round($centerLat, 6),
+            'lng' => round($centerLng, 6),
+            'radius' => $centerRadius,
             'distance' => 0,
-            'bounds' => [
-                'low' => [
-                    'latitude' => round($centerLat - $halfLatSpan, 6),
-                    'longitude' => round($centerLng - $halfLngSpan, 6),
-                ],
-                'high' => [
-                    'latitude' => round($centerLat + $halfLatSpan, 6),
-                    'longitude' => round($centerLng + $halfLngSpan, 6),
-                ],
-            ],
             'label' => 'Zone 1 (Center Hub)',
         ];
 
-        // 2. Generate radial grid points inside the search circle
-        $maxOffset = $radiusMeters * 1.05;
+        // 2. Inner Ring: 6 radial hubs at 60-degree intervals (covering ~45% radius)
+        $innerDist = (int) round($radiusMeters * 0.45);
+        $innerRadius = (int) max(2000, min(9000, round($radiusMeters * 0.35)));
+        $innerAngles = [0, 60, 120, 180, 240, 300];
 
-        for ($y = -$maxOffset; $y <= $maxOffset; $y += $step) {
-            for ($x = -$maxOffset; $x <= $maxOffset; $x += $step) {
-                $dist = sqrt($x * $x + $y * $y);
-                if ($dist <= 500 || $dist > $maxOffset) {
-                    continue; // Skip center or points outside circle
-                }
+        foreach ($innerAngles as $angleDeg) {
+            $rad = deg2rad($angleDeg);
+            $x = $innerDist * cos($rad);
+            $y = $innerDist * sin($rad);
+
+            $cellLat = $centerLat + ($y / $metersPerDegreeLat);
+            $cellLng = $centerLng + ($x / $metersPerDegreeLng);
+            $dir = $this->getCardinalDirection($x, $y);
+            $distKm = round($innerDist / 1000, 1);
+
+            $cells[] = [
+                'id' => $index++,
+                'lat' => round($cellLat, 6),
+                'lng' => round($cellLng, 6),
+                'radius' => $innerRadius,
+                'distance' => $innerDist,
+                'label' => "Zone {$index} ({$dir} {$distKm}km)",
+            ];
+        }
+
+        // 3. Outer Ring: 8 radial hubs at ~80% radius (only if radius >= 8km or high lead volume)
+        if ($radiusMeters >= 8000 || $targetCount > 150) {
+            $outerDist = (int) round($radiusMeters * 0.80);
+            $outerRadius = (int) max(3000, min(14000, round($radiusMeters * 0.40)));
+            $outerAngles = [0, 45, 90, 135, 180, 225, 270, 315];
+
+            foreach ($outerAngles as $angleDeg) {
+                $rad = deg2rad($angleDeg);
+                $x = $outerDist * cos($rad);
+                $y = $outerDist * sin($rad);
 
                 $cellLat = $centerLat + ($y / $metersPerDegreeLat);
                 $cellLng = $centerLng + ($x / $metersPerDegreeLng);
-
-                $direction = $this->getCardinalDirection($x, $y);
+                $dir = $this->getCardinalDirection($x, $y);
+                $distKm = round($outerDist / 1000, 1);
 
                 $cells[] = [
                     'id' => $index++,
                     'lat' => round($cellLat, 6),
                     'lng' => round($cellLng, 6),
-                    'radius' => $cellRadius,
-                    'distance' => round($dist),
-                    'bounds' => [
-                        'low' => [
-                            'latitude' => round($cellLat - $halfLatSpan, 6),
-                            'longitude' => round($cellLng - $halfLngSpan, 6),
-                        ],
-                        'high' => [
-                            'latitude' => round($cellLat + $halfLatSpan, 6),
-                            'longitude' => round($cellLng + $halfLngSpan, 6),
-                        ],
-                    ],
-                    'label' => "Zone {$index} ({$direction} " . round($dist / 1000, 1) . "km)",
+                    'radius' => $outerRadius,
+                    'distance' => $outerDist,
+                    'label' => "Zone {$index} ({$dir} {$distKm}km)",
                 ];
             }
         }
 
-        // Sort cells from center outward so dense center areas are crawled first
-        usort($cells, fn($a, $b) => $a['distance'] <=> $b['distance']);
-
-        // Re-index cell labels sequentially
-        foreach ($cells as $k => &$c) {
-            $c['id'] = $k + 1;
-            $distKm = round($c['distance'] / 1000, 1);
-            $c['label'] = $c['distance'] === 0 ? "Zone 1 (Center)" : "Zone " . ($k + 1) . " ({$distKm} km)";
+        // Calculate bounding box for each cell
+        foreach ($cells as &$c) {
+            $halfLat = ($c['radius'] * 1.15) / $metersPerDegreeLat;
+            $halfLng = ($c['radius'] * 1.15) / $metersPerDegreeLng;
+            $c['bounds'] = [
+                'low' => [
+                    'latitude' => round($c['lat'] - $halfLat, 6),
+                    'longitude' => round($c['lng'] - $halfLng, 6),
+                ],
+                'high' => [
+                    'latitude' => round($c['lat'] + $halfLat, 6),
+                    'longitude' => round($c['lng'] + $halfLng, 6),
+                ],
+            ];
         }
+
+        $this->logDiscovery("Calculated concentric hub grid: " . count($cells) . " total zones covering {$radiusMeters}m radius (Max budget: ~" . (count($cells) * 3) . " API calls)");
+
+        return $cells;
 
         $this->logDiscovery("Calculated search grid: " . count($cells) . " geographic cells covering {$radiusMeters}m radius (Mode: {$searchMode})");
 
@@ -345,63 +339,48 @@ class BusinessDiscoveryEngine
             $metersPerDegreeLng = 111320.0;
         }
 
-        // Halve cell size and focus on dense urban core (up to 70% of outer radius)
-        $microRadius = min(2800, max(1200, (int) round(($radiusMeters / 10))));
-        $microStep = (int) round($microRadius * 0.9);
-        $maxOffset = $radiusMeters * 0.70;
-
-        $halfLatSpan = ($microRadius * 1.15) / $metersPerDegreeLat;
-        $halfLngSpan = ($microRadius * 1.15) / $metersPerDegreeLng;
+        // Supplementary micro-hubs interleaved between standard cells (capped at 6 max to eliminate request explosion)
+        $microDist = (int) max(1500, round($radiusMeters * 0.25));
+        $microRadius = (int) max(1500, min(5000, round($radiusMeters * 0.20)));
+        $angles = [30, 90, 150, 210, 270, 330];
 
         $cells = [];
         $index = 1;
 
-        // Offset center point by half step to interleave between standard cells
-        $offsetX = $microStep * 0.5;
-        $offsetY = $microStep * 0.5;
+        foreach ($angles as $angleDeg) {
+            $rad = deg2rad($angleDeg);
+            $x = $microDist * cos($rad);
+            $y = $microDist * sin($rad);
 
-        for ($y = -$maxOffset + $offsetY; $y <= $maxOffset; $y += $microStep) {
-            for ($x = -$maxOffset + $offsetX; $x <= $maxOffset; $x += $microStep) {
-                $dist = sqrt($x * $x + $y * $y);
-                if ($dist > $maxOffset) {
-                    continue;
-                }
+            $cellLat = $centerLat + ($y / $metersPerDegreeLat);
+            $cellLng = $centerLng + ($x / $metersPerDegreeLng);
+            $dir = $this->getCardinalDirection($x, $y);
+            $distKm = round($microDist / 1000, 1);
 
-                $cellLat = $centerLat + ($y / $metersPerDegreeLat);
-                $cellLng = $centerLng + ($x / $metersPerDegreeLng);
+            $halfLat = ($microRadius * 1.15) / $metersPerDegreeLat;
+            $halfLng = ($microRadius * 1.15) / $metersPerDegreeLng;
 
-                $direction = $this->getCardinalDirection($x, $y);
-
-                $cells[] = [
-                    'id' => $index++,
-                    'lat' => round($cellLat, 6),
-                    'lng' => round($cellLng, 6),
-                    'radius' => $microRadius,
-                    'distance' => round($dist),
-                    'bounds' => [
-                        'low' => [
-                            'latitude' => round($cellLat - $halfLatSpan, 6),
-                            'longitude' => round($cellLng - $halfLngSpan, 6),
-                        ],
-                        'high' => [
-                            'latitude' => round($cellLat + $halfLatSpan, 6),
-                            'longitude' => round($cellLng + $halfLngSpan, 6),
-                        ],
+            $cells[] = [
+                'id' => $index++,
+                'lat' => round($cellLat, 6),
+                'lng' => round($cellLng, 6),
+                'radius' => $microRadius,
+                'distance' => $microDist,
+                'bounds' => [
+                    'low' => [
+                        'latitude' => round($cellLat - $halfLat, 6),
+                        'longitude' => round($cellLng - $halfLng, 6),
                     ],
-                    'label' => "Micro-Zone {$index} ({$direction} " . round($dist / 1000, 1) . "km)",
-                ];
-            }
+                    'high' => [
+                        'latitude' => round($cellLat + $halfLat, 6),
+                        'longitude' => round($cellLng + $halfLng, 6),
+                    ],
+                ],
+                'label' => "Micro-Zone {$index} ({$dir} {$distKm}km)",
+            ];
         }
 
-        usort($cells, fn($a, $b) => $a['distance'] <=> $b['distance']);
-
-        foreach ($cells as $k => &$c) {
-            $c['id'] = $k + 1;
-            $distKm = round($c['distance'] / 1000, 1);
-            $c['label'] = $c['distance'] === 0 ? "Micro-Zone 1 (Center)" : "Micro-Zone " . ($k + 1) . " ({$distKm} km)";
-        }
-
-        $this->logDiscovery("Calculated high-density micro-grid: " . count($cells) . " cells covering urban core");
+        $this->logDiscovery("Calculated compact supplementary micro-grid: " . count($cells) . " cells covering high-density core");
 
         return $cells;
     }
@@ -463,8 +442,8 @@ class BusinessDiscoveryEngine
                 'place_type' => null,
             ];
 
-            // Round 2: Category Taxonomy Variations on Standard Grid
-            $r2Queries = array_slice($secondaryVariations, 0, 3);
+            // Round 2: Category Taxonomy Variations on Standard Grid (Top 2 variations only)
+            $r2Queries = array_slice($secondaryVariations, 0, 2);
             if (!empty($r2Queries)) {
                 $rounds[] = [
                     'name' => 'Round 2: Category Variations (' . implode(', ', $r2Queries) . ')',
@@ -474,13 +453,12 @@ class BusinessDiscoveryEngine
                 ];
             }
 
-            // Round 3: High-Density Micro-Grid (Subdivision with Spatial Offset)
+            // Round 3: High-Density Micro-Hubs (Max 6 compact urban hubs)
             if (!empty($microCells)) {
-                $r3Queries = array_slice(array_merge([$primaryQuery], $secondaryVariations), 0, 2);
                 $rounds[] = [
-                    'name' => 'Round 3: High-Density Micro-Grid Subdivision',
+                    'name' => 'Round 3: High-Density Core Hubs',
                     'cells' => $microCells,
-                    'queries' => $r3Queries,
+                    'queries' => [$primaryQuery],
                     'place_type' => null,
                 ];
             }
@@ -489,28 +467,17 @@ class BusinessDiscoveryEngine
             if (!empty($placeTypes)) {
                 $rounds[] = [
                     'name' => 'Round 4: Google Place Type Filtering (' . implode(', ', $placeTypes) . ')',
-                    'cells' => $standardCells,
+                    'cells' => array_slice($standardCells, 0, 8),
                     'queries' => [$primaryQuery],
                     'place_type' => $placeTypes[0],
                 ];
-            } elseif (count($secondaryVariations) > 3) {
-                $r4Queries = array_slice($secondaryVariations, 3, 2);
+            } elseif (count($secondaryVariations) > 2) {
+                $r4Queries = array_slice($secondaryVariations, 2, 1);
                 $rounds[] = [
                     'name' => 'Round 4: Extended Category Permutations (' . implode(', ', $r4Queries) . ')',
-                    'cells' => $standardCells,
+                    'cells' => array_slice($standardCells, 0, 8),
                     'queries' => $r4Queries,
                     'place_type' => null,
-                ];
-            }
-
-            // Round 5: Extended Category Permutations / Secondary Entity Type
-            $r5Queries = array_slice($secondaryVariations, !empty($placeTypes) ? 3 : 5, 2);
-            if (!empty($r5Queries) || count($placeTypes) > 1) {
-                $rounds[] = [
-                    'name' => 'Round 5: Extended Permutations & Secondary Entity Type',
-                    'cells' => $standardCells,
-                    'queries' => !empty($r5Queries) ? $r5Queries : [$primaryQuery],
-                    'place_type' => count($placeTypes) > 1 ? $placeTypes[1] : null,
                 ];
             }
         } else {
@@ -562,8 +529,15 @@ class BusinessDiscoveryEngine
             $roundQueries = $roundConfig['queries'];
             $roundPlaceType = $roundConfig['place_type'] ?? null;
 
+            $consecutiveZeroYieldCells = 0;
             foreach ($roundCells as $cell) {
                 if ($uniqueDiscoveredCount >= $targetCount) {
+                    break;
+                }
+
+                // If consecutive cells in this round keep giving 0 new businesses, area is saturated
+                if ($consecutiveZeroYieldCells >= 4 && $uniqueDiscoveredCount > 0) {
+                    $this->logDiscovery("Zone cluster saturated: 4 consecutive cells produced 0 new unique businesses. Moving forward.");
                     break;
                 }
 
@@ -578,13 +552,83 @@ class BusinessDiscoveryEngine
                     $totalApiSearches++;
                     $roundSearches++;
 
-                    $places = $this->fetchPlacesForCell($cell, $queryText, $search->options ?? [], $roundPlaceType);
+                    $places = $this->fetchPlacesForCell($cell, $queryText, $search->options ?? [], $roundPlaceType, $seenPlaceIds);
                     $cellApiResults = count($places);
                     $cellNewUnique = 0;
                     $cellDuplicates = 0;
 
-                    foreach ($places as $place) {
-                        $pid = $place['google_place_id'] ?? null;
+                    foreach ($places as $placeItem) {
+                        $pid = $placeItem['google_place_id'] ?? null;
+                        if (!$pid) {
+                            continue;
+                        }
+
+                        // A. In-Memory Session Duplicate Check
+                        if (isset($seenPlaceIds[$pid])) {
+                            $duplicatesRemovedCount++;
+                            $cellDuplicates++;
+                            continue;
+                        }
+
+                        // B. Current Search Database Duplicate Check
+                        $dbPlaceExists = ScrapedBusiness::where('search_id', $search->id)
+                            ->where('google_place_id', $pid)
+                            ->exists();
+
+                        if ($dbPlaceExists) {
+                            $seenPlaceIds[$pid] = true;
+                            $duplicatesRemovedCount++;
+                            $cellDuplicates++;
+                            continue;
+                        }
+
+                        // C. Global Database Cache Check across ALL previous searches (tenant or system-wide)
+                        // If we already scraped this Place ID previously, reuse all data at $0 API cost!
+                        $cachedBusiness = ScrapedBusiness::where('google_place_id', $pid)
+                            ->whereNotNull('business_name')
+                            ->where('business_name', '!=', 'Unknown Business')
+                            ->latest()
+                            ->first();
+
+                        if ($cachedBusiness) {
+                            $seenPlaceIds[$pid] = true;
+
+                            $newRecord = $cachedBusiness->replicate([
+                                'search_id',
+                                'is_imported_to_crm',
+                                'created_at',
+                                'updated_at',
+                            ]);
+                            $newRecord->tenant_id = $tenantId;
+                            $newRecord->user_id = $userId;
+                            $newRecord->search_id = $search->id;
+                            $newRecord->is_imported_to_crm = false;
+                            $newRecord->status = 'discovered';
+                            $newRecord->save();
+
+                            $uniqueDiscoveredCount++;
+                            $cellNewUnique++;
+                            $this->logDiscovery("Cache hit for Place ID {$pid} ({$cachedBusiness->business_name}) — reused at $0 API cost.");
+
+                            if ($uniqueDiscoveredCount >= $targetCount) {
+                                break 2;
+                            }
+                            continue;
+                        }
+
+                        // D. Retrieve Rich Place Details on-demand (Only for confirmed unique, uncached businesses)
+                        if (!empty($placeItem['business_name'])) {
+                            // Already has full data (e.g. from test generator)
+                            $place = $placeItem;
+                        } else {
+                            $placeDetails = $this->fetchPlaceDetails($pid, $search->options ?? []);
+                            if (!$placeDetails) {
+                                continue;
+                            }
+                            $place = $placeDetails;
+                        }
+
+                        $seenPlaceIds[$pid] = true;
                         $rawName = $place['business_name'] ?? 'Unknown Business';
                         $rawWebsite = $place['website'] ?? null;
                         $normalizedWebsite = $this->emailExtractor->normalizeUrl($rawWebsite);
@@ -592,28 +636,7 @@ class BusinessDiscoveryEngine
                         $normalizedName = trim(preg_replace('/[^a-z0-9]+/i', ' ', strtolower($rawName)));
                         $rawAddress = $place['address'] ?? null;
 
-                        // A. In-Memory Session Duplicate Check
-                        if ($pid && isset($seenPlaceIds[$pid])) {
-                            $duplicatesRemovedCount++;
-                            $cellDuplicates++;
-                            continue;
-                        }
-
-                        // B. Database Duplicate Check by Google Place ID (Scoped to Current Search)
-                        if ($pid) {
-                            $dbPlaceExists = ScrapedBusiness::where('search_id', $search->id)
-                                ->where('google_place_id', $pid)
-                                ->exists();
-
-                            if ($dbPlaceExists) {
-                                $seenPlaceIds[$pid] = true;
-                                $duplicatesRemovedCount++;
-                                $cellDuplicates++;
-                                continue;
-                            }
-                        }
-
-                        // C. Database Duplicate Check by Normalized Business Name + Address (Scoped to Current Search)
+                        // Check normalized name & address duplicate in current search
                         if (!empty($normalizedName) && !empty($rawAddress)) {
                             $nameAddressExists = ScrapedBusiness::where('search_id', $search->id)
                                 ->where('normalized_business_name', $normalizedName)
@@ -621,14 +644,12 @@ class BusinessDiscoveryEngine
                                 ->exists();
 
                             if ($nameAddressExists) {
-                                if ($pid) $seenPlaceIds[$pid] = true;
                                 $duplicatesRemovedCount++;
                                 $cellDuplicates++;
                                 continue;
                             }
                         }
 
-                        // D. Database Duplicate Check by Normalized Phone (Scoped to Current Search)
                         $rawPhone = $place['phone'] ?? null;
                         $phoneNorm = null;
                         if (!empty($rawPhone)) {
@@ -639,7 +660,6 @@ class BusinessDiscoveryEngine
                                     ->exists();
 
                                 if ($phoneExists) {
-                                    if ($pid) $seenPlaceIds[$pid] = true;
                                     $duplicatesRemovedCount++;
                                     $cellDuplicates++;
                                     continue;
@@ -647,11 +667,7 @@ class BusinessDiscoveryEngine
                             }
                         }
 
-                        // Store unique business in DB immediately
-                        if ($pid) {
-                            $seenPlaceIds[$pid] = true;
-                        }
-
+                        // Calculate lead quality and save
                         $tempQuality = $this->qualityService->calculate([
                             'business_name' => $rawName,
                             'phone_normalized' => $phoneNorm,
@@ -708,6 +724,12 @@ class BusinessDiscoveryEngine
                         if ($uniqueDiscoveredCount >= $targetCount) {
                             break 2;
                         }
+                    }
+
+                    if ($cellNewUnique === 0 && $cellApiResults > 0) {
+                        $consecutiveZeroYieldCells++;
+                    } elseif ($cellNewUnique > 0) {
+                        $consecutiveZeroYieldCells = 0;
                     }
 
                     $remainingTarget = max(0, $targetCount - $uniqueDiscoveredCount);
@@ -961,13 +983,16 @@ class BusinessDiscoveryEngine
     }
 
     /**
-     * Fetch Google Places for a specific geographic cell
+     * Fetch Google Places for a specific cell with direct Contact data (Phone & Website).
+     * Billed per request ($0.035/call) returning up to 20 complete places per request.
+     * Features a duplicate circuit-breaker to halt cell pagination if results are redundant.
      */
     protected function fetchPlacesForCell(
         array $cell, 
         string $queryText, 
         array $options = [],
-        ?string $includedType = null
+        ?string $includedType = null,
+        array &$seenPlaceIds = []
     ): array {
         if (empty($this->apiKey)) {
             return $this->generateCellTestBusinesses($cell, $queryText, $includedType);
@@ -1010,6 +1035,9 @@ class BusinessDiscoveryEngine
             ];
         }
 
+        // DIRECT CONTACT RETRIEVAL (Enterprise Tier: $0.035 / request):
+        // Returns up to 20 full places with phone and website for 1 single request.
+        // This eliminates making hundreds of individual Place Details calls!
         $fields = [
             'places.id',
             'places.displayName',
@@ -1021,7 +1049,6 @@ class BusinessDiscoveryEngine
             'places.googleMapsUri',
         ];
 
-        // Optional fields if user selected ratings
         $collectOptions = $options['data_to_collect'] ?? [];
         if (!empty($collectOptions['rating'])) {
             $fields[] = 'places.rating';
@@ -1050,11 +1077,11 @@ class BusinessDiscoveryEngine
             // Retry with exponential backoff on 429
             for ($attempt = 1; $attempt <= 3; $attempt++) {
                 $response = Http::withHeaders($headers)
-                    ->timeout(12)
+                    ->timeout(10)
                     ->post($url, $body);
 
                 if ($response->status() === 429) {
-                    $backoff = $attempt * 1200000;
+                    $backoff = $attempt * 1000000;
                     Log::channel('scraper')->warning("Google Places API 429 in cell ({$cell['lat']}, {$cell['lng']}). Backing off for {$attempt}s");
                     usleep($backoff);
                     continue;
@@ -1076,29 +1103,40 @@ class BusinessDiscoveryEngine
                             'radius' => (float) $cell['radius'],
                         ],
                     ];
-                    $response = Http::withHeaders($headers)->timeout(12)->post($url, $fallbackBody);
+                    $response = Http::withHeaders($headers)->timeout(10)->post($url, $fallbackBody);
                 }
 
                 // Fallback 2: if includedType was incompatible, retry without includedType
                 if ((!$response || $response->failed()) && !empty($body['includedType'])) {
                     $fallbackBody2 = $body;
                     unset($fallbackBody2['includedType']);
-                    $response = Http::withHeaders($headers)->timeout(12)->post($url, $fallbackBody2);
+                    $response = Http::withHeaders($headers)->timeout(10)->post($url, $fallbackBody2);
                 }
             }
 
             if (!$response || $response->failed()) {
                 $err = $response ? ($response->json('error.message') ?? $response->body()) : 'Timeout';
-                Log::channel('scraper')->warning("Google Places query failed for query '{$queryText}' in cell: {$err}");
+                Log::channel('scraper')->warning("Google Places search failed for query '{$queryText}' in cell: {$err}");
                 break;
             }
 
             $data = $response->json();
             $places = $data['places'] ?? [];
+            $pageDuplicates = 0;
+            $pageCount = count($places);
 
             foreach ($places as $p) {
+                $pid = $p['id'] ?? null;
+                if (!$pid) {
+                    continue;
+                }
+
+                if (isset($seenPlaceIds[$pid])) {
+                    $pageDuplicates++;
+                }
+
                 $results[] = [
-                    'google_place_id' => $p['id'] ?? null,
+                    'google_place_id' => $pid,
                     'business_name' => $p['displayName']['text'] ?? 'Unknown Business',
                     'category' => !empty($p['types']) ? ucwords(str_replace('_', ' ', $p['types'][0])) : 'Business',
                     'website' => $p['websiteUri'] ?? null,
@@ -1110,6 +1148,13 @@ class BusinessDiscoveryEngine
                 ];
             }
 
+            // COST CONTROL: Pagination Duplicate Circuit-Breaker
+            // If >= 50% of results on this page are already known duplicates, stop paginating this cell!
+            if ($pageCount > 0 && ($pageDuplicates / $pageCount) >= 0.50) {
+                Log::channel('scraper')->debug("Circuit-breaker: High duplicates ({$pageDuplicates}/{$pageCount}) in cell. Halting cell pagination.");
+                break;
+            }
+
             $nextPageToken = $data['nextPageToken'] ?? null;
             if ($nextPageToken) {
                 usleep(1500000); // 1.5s Google token activation delay
@@ -1118,6 +1163,131 @@ class BusinessDiscoveryEngine
         } while ($nextPageToken && $page <= $maxPages);
 
         return $results;
+    }
+
+    /**
+     * Fetch rich place details on-demand ONLY for confirmed unique, uncached Place IDs.
+     * Endpoint: GET https://places.googleapis.com/v1/places/{PLACE_ID}
+     * Bills under Place Details (Enterprise) SKU (~$20-$25/1k), triggered only for kept leads.
+     */
+    public function fetchPlaceDetails(string $placeId, array $options = []): ?array
+    {
+        if (empty($this->apiKey) || empty($placeId)) {
+            return null;
+        }
+
+        $url = "https://places.googleapis.com/v1/places/{$placeId}";
+
+        // Core fields for high quality B2B leads
+        $fields = [
+            'id',
+            'displayName',
+            'formattedAddress',
+            'websiteUri',
+            'nationalPhoneNumber',
+            'internationalPhoneNumber',
+            'types',
+            'googleMapsUri',
+        ];
+
+        // Cost control: Only include Atmosphere fields if user explicitly asked for them
+        $collectOptions = $options['data_to_collect'] ?? [];
+        if (!empty($collectOptions['rating'])) {
+            $fields[] = 'rating';
+        }
+        if (!empty($collectOptions['reviews'])) {
+            $fields[] = 'userRatingCount';
+        }
+
+        $headers = [
+            'Content-Type' => 'application/json',
+            'X-Goog-Api-Key' => $this->apiKey,
+            'X-Goog-FieldMask' => implode(',', array_unique($fields)),
+        ];
+
+        $response = null;
+        for ($attempt = 1; $attempt <= 3; $attempt++) {
+            try {
+                $response = Http::withHeaders($headers)
+                    ->timeout(10)
+                    ->get($url);
+
+                if ($response->status() === 429) {
+                    usleep($attempt * 1000000);
+                    continue;
+                }
+                break;
+            } catch (\Throwable $e) {
+                Log::channel('scraper')->warning("Place Details attempt {$attempt} failed for {$placeId}: " . $e->getMessage());
+                usleep(500000);
+            }
+        }
+
+        if (!$response || $response->failed()) {
+            return $this->fetchPlaceDetailsLegacy($placeId, $options);
+        }
+
+        $data = $response->json();
+        if (empty($data['displayName']['text']) && empty($data['formattedAddress'])) {
+            return null;
+        }
+
+        return [
+            'google_place_id' => $data['id'] ?? $placeId,
+            'business_name' => $data['displayName']['text'] ?? 'Unknown Business',
+            'category' => !empty($data['types']) ? ucwords(str_replace('_', ' ', $data['types'][0])) : 'Business',
+            'website' => $data['websiteUri'] ?? null,
+            'phone' => $data['internationalPhoneNumber'] ?? $data['nationalPhoneNumber'] ?? null,
+            'address' => $data['formattedAddress'] ?? null,
+            'google_maps_url' => $data['googleMapsUri'] ?? null,
+            'rating' => isset($data['rating']) ? (float) $data['rating'] : null,
+            'review_count' => isset($data['userRatingCount']) ? (int) $data['userRatingCount'] : null,
+            'source' => 'Google Maps / Business Scraper',
+        ];
+    }
+
+    /**
+     * Fallback for Place Details via Legacy Maps API
+     */
+    protected function fetchPlaceDetailsLegacy(string $placeId, array $options = []): ?array
+    {
+        try {
+            $url = 'https://maps.googleapis.com/maps/api/place/details/json';
+            $fields = 'name,formatted_address,website,formatted_phone_number,url,type';
+            $collectOptions = $options['data_to_collect'] ?? [];
+            if (!empty($collectOptions['rating'])) {
+                $fields .= ',rating';
+            }
+            if (!empty($collectOptions['reviews'])) {
+                $fields .= ',user_ratings_total';
+            }
+
+            $res = Http::timeout(8)->get($url, [
+                'place_id' => $placeId,
+                'fields' => $fields,
+                'key' => $this->apiKey,
+            ]);
+
+            if ($res->successful() && $res->json('status') === 'OK') {
+                $item = $res->json('result') ?? [];
+                return [
+                    'google_place_id' => $placeId,
+                    'business_name' => $item['name'] ?? 'Unknown Business',
+                    'category' => !empty($item['types']) ? ucwords(str_replace('_', ' ', $item['types'][0])) : 'Business',
+                    'website' => $item['website'] ?? null,
+                    'phone' => $item['formatted_phone_number'] ?? null,
+                    'address' => $item['formatted_address'] ?? null,
+                    'google_maps_url' => $item['url'] ?? null,
+                    'rating' => isset($item['rating']) ? (float) $item['rating'] : null,
+                    'review_count' => isset($item['user_ratings_total']) ? (int) $item['user_ratings_total'] : null,
+                    'source' => 'Google Maps / Business Scraper',
+                ];
+            }
+        } catch (\Throwable $e) {
+            Log::channel('scraper')->error("Legacy Place Details failed for {$placeId}: " . $e->getMessage());
+        }
+
+        return null;
     }
 
     /**

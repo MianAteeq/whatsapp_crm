@@ -274,7 +274,8 @@ class GooglePlacesService
             $places = $data['results'] ?? [];
             foreach ($places as $place) {
                 $placeId = $place['place_id'] ?? null;
-                $details = $placeId ? $this->getPlaceDetailsLegacy($placeId) : [];
+                // Cost control: Only call details if phone number is missing from initial search result
+                $details = ($placeId && empty($place['formatted_phone_number'])) ? $this->getPlaceDetailsLegacy($placeId) : [];
 
                 $results[] = [
                     'google_place_id' => $placeId,

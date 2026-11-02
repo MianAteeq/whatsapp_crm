@@ -525,11 +525,21 @@ class ScraperController extends Controller
             });
         }
 
-        $filename = 'scraped_businesses_' . date('Y-m-d_His') . '.csv';
+        $searchPrefix = '';
+        if ($request->filled('search_id')) {
+            $search = ScraperSearch::where('tenant_id', $tenantId)->find($request->search_id);
+            if ($search) {
+                $safeKeyword = \Illuminate\Support\Str::slug($search->keyword ?: 'scrape');
+                $searchPrefix = "{$safeKeyword}_leads_";
+            }
+        }
+
+        $filename = ($searchPrefix ?: 'scraped_businesses_') . date('Y-m-d_His') . '.csv';
 
         $headers = [
             'Content-Type' => 'text/csv',
             'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+            'Access-Control-Expose-Headers' => 'Content-Disposition',
             'Pragma' => 'no-cache',
             'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
             'Expires' => '0',
