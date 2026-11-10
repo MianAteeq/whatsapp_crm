@@ -25,6 +25,21 @@ use App\Http\Controllers\Api\EmailCampaignController;
 use App\Http\Controllers\Api\EmailTemplateController;
 use App\Http\Controllers\Api\EmailSettingController;
 use App\Http\Controllers\Api\EmailTrackingController;
+use App\Http\Controllers\Api\Social\SocialAccountController;
+use App\Http\Controllers\Api\Social\SocialPostController;
+use App\Http\Controllers\Api\Social\SocialInboxController;
+use App\Http\Controllers\Api\Social\SocialAnalyticsController;
+use App\Http\Controllers\Api\Social\SocialMediaUploadController;
+use App\Http\Controllers\Api\Social\SocialWebhookController;
+use App\Http\Controllers\Api\Social\SocialAiController;
+use App\Http\Controllers\Api\Social\MetaLeadAdsController;
+use App\Http\Controllers\Api\Builder\PageBuilderController;
+use App\Http\Controllers\Api\Builder\FormBuilderController;
+use App\Http\Controllers\Api\Builder\SubmissionController;
+use App\Http\Controllers\Api\Builder\TemplateController;
+use App\Http\Controllers\Api\Builder\PublicBuilderController;
+use App\Http\Controllers\Api\Media\MediaController;
+use App\Http\Controllers\Api\Reporting\AdvancedReportingController;
 use Illuminate\Support\Facades\Route;
 
 // ============================================
@@ -69,11 +84,52 @@ Route::post('/webhook/email/{provider}', [EmailTrackingController::class, 'webho
 Route::post('/webhooks/mailtrap', [\App\Http\Controllers\Api\MailtrapWebhookController::class, 'handle']);
 Route::post('/webhook/mailtrap', [\App\Http\Controllers\Api\MailtrapWebhookController::class, 'handle']);
 
+/**
+ * Public Meta OAuth callback route for Social Media Planner
+ */
+Route::get('/v1/social/oauth/callback', [SocialAccountController::class, 'oauthCallback']);
+Route::get('/social/oauth/callback', [SocialAccountController::class, 'oauthCallback']);
+Route::get('/social/facebook/callback', [SocialAccountController::class, 'oauthCallback']);
+
+/**
+ * Public Meta Webhook routes for Facebook Messenger & Instagram Direct
+ */
+Route::get('/v1/social/webhook', [SocialWebhookController::class, 'verify']);
+Route::post('/v1/social/webhook', [SocialWebhookController::class, 'handle']);
+Route::get('/social/webhook', [SocialWebhookController::class, 'verify']);
+Route::post('/social/webhook', [SocialWebhookController::class, 'handle']);
+
+/**
+ * Public CORS-enabled Media Stream route for video frame seeking and thumbnails
+ */
+Route::get('/v1/social/media/stream', [SocialMediaUploadController::class, 'stream']);
+Route::options('/v1/social/media/stream', function () {
+    return response('', 204)->withHeaders([
+        'Access-Control-Allow-Origin' => '*',
+        'Access-Control-Allow-Methods' => 'GET, HEAD, OPTIONS',
+        'Access-Control-Allow-Headers' => 'Range, Content-Type, Accept, Origin',
+    ]);
+});
+
+/**
+ * Public Page & Form Builder Routes (Landing Pages, Standalone Forms, Embeds & Submissions)
+ */
+Route::get('/v1/public/builder/page/{slug}', [PublicBuilderController::class, 'showPage']);
+Route::get('/v1/public/builder/form/{slug}', [PublicBuilderController::class, 'showForm']);
+Route::post('/v1/public/builder/submit/{slug}', [PublicBuilderController::class, 'submit']);
+
+Route::get('/public/builder/page/{slug}', [PublicBuilderController::class, 'showPage']);
+Route::get('/public/builder/form/{slug}', [PublicBuilderController::class, 'showForm']);
+Route::post('/public/builder/submit/{slug}', [PublicBuilderController::class, 'submit']);
+
 // ============================================
 // Protected Routes (Require Authentication)
 // ============================================
 
 Route::middleware('auth:sanctum')->group(function () {
+    // Real-Time WebSocket Authentication
+    Route::match(['get', 'post'], '/broadcasting/auth', '\Illuminate\Broadcasting\BroadcastController@authenticate');
+    Route::match(['get', 'post'], '/proxy/broadcasting/auth', '\Illuminate\Broadcasting\BroadcastController@authenticate');
     /**
      * User logout route
      */
@@ -415,6 +471,151 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('email/ai-agent/services', [\App\Http\Controllers\Api\AiMarketingAgentController::class, 'services']);
     Route::post('email/ai-agent/services', [\App\Http\Controllers\Api\AiMarketingAgentController::class, 'saveService']);
     Route::delete('email/ai-agent/services/{id}', [\App\Http\Controllers\Api\AiMarketingAgentController::class, 'deleteService']);
+
+    // ============================================
+    // Social Media Planner Routes
+    // ============================================
+    Route::prefix('v1/social')->group(function () {
+        // Accounts
+        Route::get('/accounts', [SocialAccountController::class, 'index']);
+        Route::get('/accounts/connect-url', [SocialAccountController::class, 'connectUrl']);
+        Route::get('/accounts/pending-pages', [SocialAccountController::class, 'getPendingPages']);
+        Route::post('/accounts/confirm-selection', [SocialAccountController::class, 'confirmPageSelection']);
+        Route::get('/accounts/{id}', [SocialAccountController::class, 'show']);
+        Route::delete('/accounts/{id}', [SocialAccountController::class, 'destroy']);
+        Route::post('/accounts/{id}/disconnect', [SocialAccountController::class, 'disconnect']);
+        Route::post('/accounts/{id}/check-health', [SocialAccountController::class, 'checkHealth']);
+        Route::post('/accounts/{id}/refresh-token', [SocialAccountController::class, 'refreshToken']);
+
+        // Media Upload
+        Route::post('/media/upload', [SocialMediaUploadController::class, 'upload']);
+
+        // Posts & Content Calendar
+        Route::get('/posts', [SocialPostController::class, 'index']);
+        Route::get('/posts/calendar', [SocialPostController::class, 'calendar']);
+        Route::post('/posts', [SocialPostController::class, 'store']);
+        Route::get('/posts/{id}', [SocialPostController::class, 'show']);
+        Route::put('/posts/{id}/reschedule', [SocialPostController::class, 'reschedule']);
+        Route::post('/posts/{id}/publish-now', [SocialPostController::class, 'publishNow']);
+        Route::delete('/posts/{id}', [SocialPostController::class, 'destroy']);
+
+        // Unified Social Inbox (Facebook Messenger, Instagram Direct & Comments)
+        Route::get('/inbox/conversations', [SocialInboxController::class, 'conversations']);
+        Route::get('/inbox/conversations/{id}', [SocialInboxController::class, 'conversationShow']);
+        Route::get('/inbox/sync-delta', [SocialInboxController::class, 'syncDelta']);
+        Route::post('/inbox/conversations/sync', [SocialInboxController::class, 'sync']);
+        Route::post('/inbox/conversations/{id}/messages', [SocialInboxController::class, 'sendMessage']);
+        Route::put('/inbox/conversations/{id}/status', [SocialInboxController::class, 'updateStatus']);
+        Route::put('/inbox/conversations/{id}/priority', [SocialInboxController::class, 'updatePriority']);
+        Route::put('/inbox/conversations/{id}/unread', [SocialInboxController::class, 'toggleUnread']);
+        Route::put('/inbox/conversations/{id}/assign', [SocialInboxController::class, 'assign']);
+        Route::post('/inbox/conversations/{id}/notes', [SocialInboxController::class, 'addNote']);
+        Route::delete('/inbox/notes/{noteId}', [SocialInboxController::class, 'deleteNote']);
+        Route::post('/inbox/conversations/{id}/tags', [SocialInboxController::class, 'addTag']);
+        Route::delete('/inbox/conversations/{id}/tags', [SocialInboxController::class, 'removeTag']);
+        Route::post('/inbox/conversations/{id}/link-contact', [SocialInboxController::class, 'linkContact']);
+        Route::post('/inbox/conversations/{id}/create-contact', [SocialInboxController::class, 'createContact']);
+        Route::get('/inbox/assignable-users', [SocialInboxController::class, 'assignableUsers']);
+        Route::get('/inbox/quick-replies', [SocialInboxController::class, 'quickReplies']);
+        Route::post('/inbox/sync', [SocialInboxController::class, 'sync']);
+
+        // Analytics
+        Route::get('/analytics', [SocialAnalyticsController::class, 'index']);
+        Route::post('/analytics/sync', [SocialAnalyticsController::class, 'sync']);
+
+        // AI Social Copilot
+        Route::post('/ai/generate-captions', [SocialAiController::class, 'generateCaptions']);
+        Route::post('/ai/rewrite', [SocialAiController::class, 'rewrite']);
+        Route::post('/ai/suggest-hashtags', [SocialAiController::class, 'suggestHashtags']);
+        Route::post('/ai/suggest-reply', [SocialAiController::class, 'suggestReply']);
+
+        // Meta Lead Ads Integration (Facebook & Instagram Lead Generation)
+        Route::get('/leads/accounts', [MetaLeadAdsController::class, 'getAccounts']);
+        Route::get('/leads/oauth-url', [MetaLeadAdsController::class, 'getOAuthUrl']);
+        Route::get('/leads/metrics', [MetaLeadAdsController::class, 'getMetrics']);
+        Route::get('/leads/forms', [MetaLeadAdsController::class, 'getForms']);
+        Route::post('/leads/forms/sync', [MetaLeadAdsController::class, 'syncRemoteForms']);
+        Route::get('/leads/forms/{id}', [MetaLeadAdsController::class, 'getForm']);
+        Route::put('/leads/forms/{id}', [MetaLeadAdsController::class, 'updateForm']);
+        Route::post('/leads/forms/{id}/import', [MetaLeadAdsController::class, 'importHistoricalLeads']);
+        Route::get('/leads/submissions', [MetaLeadAdsController::class, 'getSubmissions']);
+        Route::post('/leads/submissions/{id}/retry', [MetaLeadAdsController::class, 'retrySubmission']);
+    });
+
+    // ============================================
+    // Page & Form Builder Module Routes
+    // ============================================
+    Route::prefix('v1/builder')->group(function () {
+        // Dashboard Metrics (both aliases supported)
+        Route::get('/metrics', [SubmissionController::class, 'dashboardMetrics']);
+        Route::get('/dashboard/metrics', [SubmissionController::class, 'dashboardMetrics']);
+
+        // Landing Pages
+        Route::get('/pages', [PageBuilderController::class, 'index']);
+        Route::post('/pages', [PageBuilderController::class, 'store']);
+        Route::get('/pages/{id}', [PageBuilderController::class, 'show']);
+        Route::put('/pages/{id}', [PageBuilderController::class, 'update']);
+        Route::delete('/pages/{id}', [PageBuilderController::class, 'destroy']);
+        Route::post('/pages/{id}/publish', [PageBuilderController::class, 'togglePublish']);
+        Route::post('/pages/{id}/toggle-publish', [PageBuilderController::class, 'togglePublish']);
+        Route::post('/pages/{id}/clone', [PageBuilderController::class, 'clone']);
+        Route::post('/pages/{id}/duplicate', [PageBuilderController::class, 'clone']);
+
+        // Forms & Surveys
+        Route::get('/forms', [FormBuilderController::class, 'index']);
+        Route::post('/forms', [FormBuilderController::class, 'store']);
+        Route::get('/forms/{id}', [FormBuilderController::class, 'show']);
+        Route::put('/forms/{id}', [FormBuilderController::class, 'update']);
+        Route::delete('/forms/{id}', [FormBuilderController::class, 'destroy']);
+        Route::post('/forms/{id}/publish', [FormBuilderController::class, 'togglePublish']);
+        Route::post('/forms/{id}/toggle-publish', [FormBuilderController::class, 'togglePublish']);
+        Route::post('/forms/{id}/clone', [FormBuilderController::class, 'clone']);
+        Route::post('/forms/{id}/duplicate', [FormBuilderController::class, 'clone']);
+
+        // Submissions & CSV Export
+        Route::get('/submissions', [SubmissionController::class, 'index']);
+        Route::get('/submissions/export', [SubmissionController::class, 'export']);
+        Route::get('/submissions/export/csv', [SubmissionController::class, 'export']);
+        Route::get('/submissions/{id}', [SubmissionController::class, 'show']);
+        Route::delete('/submissions/{id}', [SubmissionController::class, 'destroy']);
+
+        // Templates Library
+        Route::get('/templates', [TemplateController::class, 'index']);
+    });
+
+    // ============================================
+    // Media Storage & Library Module Routes
+    // ============================================
+    Route::prefix('v1/media')->group(function () {
+        Route::get('/stats', [MediaController::class, 'getStats']);
+        Route::get('/folders', [MediaController::class, 'getFolders']);
+        Route::post('/folders', [MediaController::class, 'createFolder']);
+        Route::put('/folders/{id}', [MediaController::class, 'updateFolder']);
+        Route::delete('/folders/{id}', [MediaController::class, 'deleteFolder']);
+
+        Route::get('/assets', [MediaController::class, 'getAssets']);
+        Route::post('/assets/upload', [MediaController::class, 'upload']);
+        Route::put('/assets/{id}', [MediaController::class, 'updateAsset']);
+        Route::delete('/assets/{id}', [MediaController::class, 'deleteAsset']);
+        Route::post('/assets/bulk-move', [MediaController::class, 'bulkMove']);
+        Route::post('/assets/bulk-delete', [MediaController::class, 'bulkDelete']);
+        Route::post('/assets/{id}/access', [MediaController::class, 'recordAccess']);
+    });
+
+    // ============================================
+    // Advanced Marketing & Team Analytics Routes
+    // ============================================
+    Route::prefix('v1/reporting')->group(function () {
+        Route::get('/overview', [AdvancedReportingController::class, 'getOverview']);
+        Route::get('/advertising', [AdvancedReportingController::class, 'getAdvertising']);
+        Route::get('/social', [AdvancedReportingController::class, 'getSocial']);
+        Route::get('/leads', [AdvancedReportingController::class, 'getLeads']);
+        Route::get('/team', [AdvancedReportingController::class, 'getTeam']);
+        Route::get('/saved', [AdvancedReportingController::class, 'getSavedReports']);
+        Route::post('/saved', [AdvancedReportingController::class, 'saveReport']);
+        Route::delete('/saved/{id}', [AdvancedReportingController::class, 'deleteSavedReport']);
+        Route::get('/export', [AdvancedReportingController::class, 'exportCsv']);
+    });
 });
 
 // ============================================

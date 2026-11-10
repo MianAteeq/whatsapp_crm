@@ -1,0 +1,82 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class BuilderForm extends Model
+{
+    use HasFactory, SoftDeletes;
+
+    protected $table = 'builder_forms';
+
+    protected $fillable = [
+        'tenant_id',
+        'user_id',
+        'page_id',
+        'title',
+        'slug',
+        'form_type',
+        'status',
+        'schema',
+        'settings',
+        'crm_mapping',
+        'published_at',
+        'view_count',
+        'submission_count',
+    ];
+
+    protected $casts = [
+        'schema' => 'array',
+        'settings' => 'array',
+        'crm_mapping' => 'array',
+        'published_at' => 'datetime',
+        'view_count' => 'integer',
+        'submission_count' => 'integer',
+    ];
+
+    public const TYPE_LEAD_FORM = 'lead_form';
+    public const TYPE_SURVEY = 'survey';
+    public const TYPE_CONTACT_FORM = 'contact_form';
+    public const TYPE_REGISTRATION = 'registration';
+
+    public const STATUS_DRAFT = 'draft';
+    public const STATUS_PUBLISHED = 'published';
+    public const STATUS_ARCHIVED = 'archived';
+
+    public function scopeForTenant(Builder $query, int $tenantId): Builder
+    {
+        return $query->where('tenant_id', $tenantId);
+    }
+
+    public function scopePublished(Builder $query): Builder
+    {
+        return $query->where('status', self::STATUS_PUBLISHED);
+    }
+
+    public function tenant(): BelongsTo
+    {
+        return $this->belongsTo(Tenant::class, 'tenant_id');
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
+    public function page(): BelongsTo
+    {
+        return $this->belongsTo(BuilderPage::class, 'page_id');
+    }
+
+    public function submissions(): HasMany
+    {
+        return $this->hasMany(BuilderSubmission::class, 'form_id');
+    }
+}
+

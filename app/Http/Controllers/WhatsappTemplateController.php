@@ -370,7 +370,7 @@ class WhatsappTemplateController extends Controller
         |--------------------------------------------------------------------------
         */
 
-        $appId = '1333790982005297';
+        $appId = '2165361860709832';
 
         $sessionResponse = Http::withToken($setting->access_token)
             ->post(

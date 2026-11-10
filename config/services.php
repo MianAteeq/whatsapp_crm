@@ -62,9 +62,11 @@ return [
     ],
 
     'facebook' => [
-        'app_id' => env('FACEBOOK_APP_ID', '1570952461271028'),
-        'app_secret' => env('FACEBOOK_APP_SECRET'),
-        'graph_version' => env('FACEBOOK_GRAPH_VERSION', 'v25.0'),
+        'app_id' => env('FACEBOOK_APP_ID', '2165361860709832'),
+        'app_secret' => env('FACEBOOK_APP_SECRET', 'a66ba3654348907576a7e71437c7fe3e'),
+        'graph_version' => env('FACEBOOK_GRAPH_VERSION', 'v21.0'),
+        'config_id' => env('FACEBOOK_CONFIG_ID', '1908588223842822'),
+        'redirect_uri' => env('META_REDIRECT_URI', 'https://generic-turbofan-rundown.ngrok-free.dev/api/social/facebook/callback'),
     ],
 
 ];
