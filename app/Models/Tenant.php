@@ -17,6 +17,16 @@ class Tenant extends Model
         return $this->hasOne(EmailSetting::class);
     }
 
+    public function whatsappSetting()
+    {
+        return $this->hasOne(WhatsappSetting::class);
+    }
+
+    public function whatsappBillingProfile()
+    {
+        return $this->hasOne(WhatsappBillingProfile::class);
+    }
+
     public function emailCampaigns()
     {
         return $this->hasMany(EmailCampaign::class);

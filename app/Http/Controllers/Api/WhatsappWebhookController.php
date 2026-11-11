@@ -1624,9 +1624,52 @@ class WhatsappWebhookController extends Controller
                         $messageLog->update($updateData);
                     }
 
+                    // ======================================
+                    // BILLING STATUS & ERROR DETECTION
+                    // ======================================
+                    if ($message->tenant_id) {
+                        try {
+                            $billingService = app(\App\Services\WhatsAppBillingService::class);
+                            $setting = WhatsappSetting::where('tenant_id', $message->tenant_id)->first();
+                            $wabaId = $setting?->business_account_id ?? '';
 
+                            if ($messageStatus === 'failed' && !empty($status['errors'])) {
+                                foreach ($status['errors'] as $err) {
+                                    $code = (string) ($err['code'] ?? $err['error_subcode'] ?? '');
+                                    $title = $err['title'] ?? $err['message'] ?? 'Message delivery failed';
+                                    $details = $err['error_data']['details'] ?? $err['message'] ?? $title;
 
+                                    $isBillingIssue = (
+                                        $code === '131042' ||
+                                        $code === '131045' ||
+                                        $code === '131051' ||
+                                        $code === '131052' ||
+                                        $code === '131053' ||
+                                        str_contains(strtolower($title . ' ' . $details), 'currency') ||
+                                        str_contains(strtolower($title . ' ' . $details), 'payment') ||
+                                        str_contains(strtolower($title . ' ' . $details), 'eligibility')
+                                    );
 
+                                    if ($isBillingIssue) {
+                                        $billingService->handleWebhookBillingError(
+                                            (int) $message->tenant_id,
+                                            $wabaId,
+                                            $code ?: '131042',
+                                            $details,
+                                            $err
+                                        );
+                                    }
+                                }
+                            } elseif (in_array($messageStatus, ['sent', 'delivered', 'read'], true)) {
+                                $billingService->recordSuccessfulMessage(
+                                    (int) $message->tenant_id,
+                                    $wabaId
+                                );
+                            }
+                        } catch (\Throwable $billingEx) {
+                            \Log::warning('[WhatsApp Webhook] Billing status detection failed: ' . $billingEx->getMessage());
+                        }
+                    }
 
                     // ======================================
                     // REALTIME MESSAGE STATUS

@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\WhatsappMessageController;
 use App\Http\Controllers\Api\WhatsappSettingController;
 use App\Http\Controllers\Api\WhatsappTemplateController;
 use App\Http\Controllers\Api\WhatsappWebhookController;
+use App\Http\Controllers\Api\WhatsappBillingController;
 use App\Http\Controllers\CampaignController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Api\SystemSettingsController;
@@ -242,6 +243,16 @@ Route::middleware('auth:sanctum')->group(function () {
      * Upload WhatsApp business profile logo
      */
     Route::post('whatsapp/profile/logo', [WhatsappSettingController::class, 'uploadLogo']);
+
+    // ---- WhatsApp Billing & Payments ----
+
+    /**
+     * WhatsApp Billing Profile & Status
+     */
+    Route::get('whatsapp/billing', [WhatsappBillingController::class, 'index']);
+    Route::post('whatsapp/billing/refresh', [WhatsappBillingController::class, 'refresh']);
+    Route::post('whatsapp/billing/meta-url', [WhatsappBillingController::class, 'getMetaUrl']);
+    Route::post('whatsapp/billing/dismiss-error', [WhatsappBillingController::class, 'dismissError']);
 
 
     // ---- Conversations & Messages ----

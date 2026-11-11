@@ -28,4 +28,9 @@ class WhatsappSetting extends Model
         'is_registered' => 'boolean',
         'is_waba_subscribed' => 'boolean',
     ];
+
+    public function billingProfile()
+    {
+        return $this->hasOne(WhatsappBillingProfile::class, 'whatsapp_account_id');
+    }
 }
