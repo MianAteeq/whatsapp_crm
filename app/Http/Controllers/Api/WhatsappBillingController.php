@@ -93,7 +93,7 @@ class WhatsappBillingController extends Controller
     public function getMetaUrl(Request $request): JsonResponse
     {
         $request->validate([
-            'target' => 'nullable|string|in:payment_methods,currency,billing_hub,business_info',
+            'target' => 'nullable|string|in:payment_methods,currency,billing_hub,business_info,whatsapp_manager,business_settings',
         ]);
 
         $tenantId = (int) auth()->user()->tenant_id;

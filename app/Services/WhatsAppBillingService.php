@@ -15,6 +15,8 @@ class WhatsAppBillingService
      */
     protected const ALLOWED_META_DOMAINS = [
         'business.facebook.com',
+        'facebook.com',
+        'www.facebook.com',
     ];
 
     /**
@@ -179,7 +181,7 @@ class WhatsAppBillingService
     /**
      * Compute current billing state based on factual indicators.
      */
-    protected function determineStatus(
+    public function determineStatus(
         ?WhatsappBillingProfile $profile,
         ?string $currency,
         ?string $accountReviewStatus,
@@ -235,13 +237,28 @@ class WhatsAppBillingService
             if (!empty($businessId)) {
                 $url = "https://business.facebook.com/settings/info?business_id={$businessId}";
             } else {
-                $url = "https://business.facebook.com/wa/manage/home/?waba_id={$wabaId}";
+                $url = "https://business.facebook.com/settings/info";
             }
-        } elseif ($target === 'billing_hub' && !empty($businessId)) {
-            $url = "https://business.facebook.com/billing_hub/payment_methods?business_id={$businessId}";
+        } elseif ($target === 'whatsapp_manager') {
+            if (!empty($wabaId)) {
+                $url = "https://business.facebook.com/wa/manage/home/?waba_id={$wabaId}";
+            } else {
+                $url = "https://business.facebook.com/wa/manage/home/";
+            }
+        } elseif ($target === 'business_settings') {
+            if (!empty($businessId)) {
+                $url = "https://business.facebook.com/settings/payment-methods?business_id={$businessId}";
+            } else {
+                $url = "https://business.facebook.com/settings/payment-methods";
+            }
         } else {
-            // Default: WhatsApp Manager dedicated payment methods page for this specific WABA
-            $url = "https://business.facebook.com/wa/manage/payment-methods/?waba_id={$wabaId}";
+            // Default: Meta Business Suite Billing Hub Payment Methods
+            // Official direct URL to add/manage credit cards for WhatsApp & Meta ads
+            if (!empty($businessId)) {
+                $url = "https://business.facebook.com/latest/billing_hub/payment_methods?business_id={$businessId}";
+            } else {
+                $url = "https://business.facebook.com/latest/billing_hub/payment_methods";
+            }
         }
 
         $this->validateMetaUrl($url);
@@ -401,9 +418,11 @@ class WhatsAppBillingService
             'last_checked_at'            => $profile->last_checked_at?->toISOString(),
             'last_successful_message_at' => $profile->last_successful_message_at?->toISOString(),
             'meta_links'                 => [
-                'payment_methods' => $this->generateMetaBillingUrl($profile->tenant_id, 'payment_methods', $profile, $setting),
-                'currency_config' => $this->generateMetaBillingUrl($profile->tenant_id, 'currency', $profile, $setting),
-                'billing_hub'     => $this->generateMetaBillingUrl($profile->tenant_id, 'billing_hub', $profile, $setting),
+                'payment_methods'   => $this->generateMetaBillingUrl($profile->tenant_id, 'payment_methods', $profile, $setting),
+                'billing_hub'       => $this->generateMetaBillingUrl($profile->tenant_id, 'payment_methods', $profile, $setting),
+                'whatsapp_manager'  => $this->generateMetaBillingUrl($profile->tenant_id, 'whatsapp_manager', $profile, $setting),
+                'currency_config'   => $this->generateMetaBillingUrl($profile->tenant_id, 'currency', $profile, $setting),
+                'business_settings' => $this->generateMetaBillingUrl($profile->tenant_id, 'business_settings', $profile, $setting),
             ],
             'meta_raw'                   => !empty($extraMeta) ? [
                 'currency'              => $extraMeta['currency'] ?? null,
