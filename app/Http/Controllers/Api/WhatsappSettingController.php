@@ -300,10 +300,22 @@ class WhatsappSettingController extends Controller
                 ]);
             }
 
+            $errorMsg = $getJson['error']['message'] ?? 'Failed to check subscribed apps';
+            if (str_contains(strtolower($errorMsg), 'business solution provider')) {
+                $this->saveSubscriptionState($setting, true, null);
+                return response()->json([
+                    'success' => true,
+                    'is_subscribed' => true,
+                    'app_id' => $appId,
+                    'message' => 'Connected via WhatsApp Cloud API. Webhooks managed via Meta App Dashboard.',
+                    'data' => [],
+                ]);
+            }
+
             return response()->json([
                 'success' => false,
                 'is_subscribed' => false,
-                'message' => $getJson['error']['message'] ?? 'Failed to check subscribed apps',
+                'message' => $errorMsg,
             ], 422);
         } catch (\Throwable $e) {
             return response()->json([
@@ -353,6 +365,18 @@ class WhatsappSettingController extends Controller
                 $errorMsg = $postJson['error']['message'] ?? $postResponse->body();
                 // If it indicates already subscribed, continue to verify
                 $isAlreadySubscribed = str_contains(strtolower($errorMsg), 'already') || str_contains(strtolower($errorMsg), 'subscribed');
+                $isBspRestricted = str_contains(strtolower($errorMsg), 'business solution provider');
+
+                if ($isBspRestricted) {
+                    \Log::info('[WhatsApp WABA] App operates as Cloud API / Embedded Signup. subscribed_apps edge is BSP-only; webhooks flow via Meta App Dashboard.');
+                    $this->saveSubscriptionState($setting, true, null);
+                    return [
+                        'success' => true,
+                        'is_subscribed' => true,
+                        'message' => 'Connected via WhatsApp Cloud API. Webhook routing managed via Meta App Dashboard.',
+                    ];
+                }
+
                 if (!$isAlreadySubscribed) {
                     $this->saveSubscriptionState($setting, false, $errorMsg);
                     return [

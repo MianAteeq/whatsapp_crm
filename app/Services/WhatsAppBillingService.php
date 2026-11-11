@@ -64,15 +64,34 @@ class WhatsAppBillingService
         $profile = $this->getOrCreateBillingProfile($tenantId);
 
         try {
-            // Documented endpoint for WABA details including currency, review status, and owner business portfolio
+            // Documented endpoint for standard Cloud API WABA details (currency, review status, etc.)
+            // Note: We do NOT query 'primary_funding_id' here because that field requires official
+            // WhatsApp Business Solution Provider (BSP) partner status and triggers OAuthException.
             $url = "https://graph.facebook.com/{$graphVersion}/{$wabaId}";
             $response = Http::withToken($setting->access_token)
                 ->timeout(15)
                 ->get($url, [
-                    'fields' => 'id,name,currency,timezone_id,account_review_status,owner_business_info,primary_funding_id',
+                    'fields' => 'id,name,currency,timezone_id,account_review_status',
                 ]);
 
             $data = $response->json() ?? [];
+
+            // If any requested field triggered a permission check, retry with minimal safe fields
+            if (!$response->successful() && isset($data['error'])) {
+                $rawMsg = strtolower($data['error']['message'] ?? '');
+                if (str_contains($rawMsg, 'business solution provider') || str_contains($rawMsg, 'permission')) {
+                    $fallbackResponse = Http::withToken($setting->access_token)
+                        ->timeout(15)
+                        ->get($url, [
+                            'fields' => 'id,name,currency',
+                        ]);
+
+                    if ($fallbackResponse->successful()) {
+                        $response = $fallbackResponse;
+                        $data = $fallbackResponse->json() ?? [];
+                    }
+                }
+            }
 
             if (!$response->successful()) {
                 $errorMsg = $data['error']['message'] ?? 'Failed to query Meta Graph API.';
