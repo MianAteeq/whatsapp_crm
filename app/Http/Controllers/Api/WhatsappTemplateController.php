@@ -72,6 +72,28 @@ class WhatsappTemplateController extends Controller
     public function store(Request $request)
     {
         // ==================================================
+        // EXTRACT FIELDS FROM COMPONENTS (IF PROVIDED)
+        // ==================================================
+
+        if ($request->has('components') && is_array($request->components)) {
+            foreach ($request->components as $component) {
+                $type = strtoupper($component['type'] ?? '');
+
+                if ($type === 'BODY' && !empty($component['text']) && !$request->filled('body')) {
+                    $request->merge(['body' => $component['text']]);
+                }
+
+                if ($type === 'FOOTER' && !empty($component['text']) && !$request->filled('footer')) {
+                    $request->merge(['footer' => $component['text']]);
+                }
+
+                if ($type === 'BUTTONS' && !empty($component['buttons']) && !$request->filled('buttons')) {
+                    $request->merge(['buttons' => $component['buttons']]);
+                }
+            }
+        }
+
+        // ==================================================
         // VALIDATION
         // ==================================================
 
@@ -429,19 +451,21 @@ class WhatsappTemplateController extends Controller
 
             foreach ($request->buttons as $button) {
 
+                $buttonType = strtoupper($button['type'] ?? '');
+
                 // ==========================================
                 // URL BUTTON
                 // ==========================================
 
-                if ($button['type'] === 'URL') {
+                if ($buttonType === 'URL') {
 
                     $buttonData = [
 
                         'type' => 'URL',
 
-                        'text' => $button['text'],
+                        'text' => $button['text'] ?? '',
 
-                        'url' => $button['url'],
+                        'url' => $button['url'] ?? '',
 
                     ];
 
@@ -449,11 +473,9 @@ class WhatsappTemplateController extends Controller
 
                     if (!empty($button['example'])) {
 
-                        $buttonData['example'] = [
-
-                            $button['example']
-
-                        ];
+                        $buttonData['example'] = is_array($button['example'])
+                            ? $button['example']
+                            : [$button['example']];
                     }
 
 
@@ -469,7 +491,7 @@ class WhatsappTemplateController extends Controller
 
                 elseif (
 
-                    $button['type'] === 'PHONE_NUMBER'
+                    $buttonType === 'PHONE_NUMBER'
 
                 ) {
 
@@ -477,11 +499,11 @@ class WhatsappTemplateController extends Controller
 
                         'type' => 'PHONE_NUMBER',
 
-                        'text' => $button['text'],
+                        'text' => $button['text'] ?? '',
 
                         'phone_number' =>
 
-                        $button['phone_number'],
+                        $button['phone_number'] ?? $button['phoneNumber'] ?? '',
 
                     ];
                 }
@@ -494,7 +516,7 @@ class WhatsappTemplateController extends Controller
 
                 elseif (
 
-                    $button['type'] === 'QUICK_REPLY'
+                    $buttonType === 'QUICK_REPLY'
 
                 ) {
 
@@ -502,7 +524,7 @@ class WhatsappTemplateController extends Controller
 
                         'type' => 'QUICK_REPLY',
 
-                        'text' => $button['text'],
+                        'text' => $button['text'] ?? '',
 
                     ];
                 }
@@ -1069,6 +1091,28 @@ class WhatsappTemplateController extends Controller
 
 
         // ==================================================
+        // EXTRACT FIELDS FROM COMPONENTS (IF PROVIDED)
+        // ==================================================
+
+        if ($request->has('components') && is_array($request->components)) {
+            foreach ($request->components as $component) {
+                $type = strtoupper($component['type'] ?? '');
+
+                if ($type === 'BODY' && !empty($component['text']) && !$request->filled('body')) {
+                    $request->merge(['body' => $component['text']]);
+                }
+
+                if ($type === 'FOOTER' && !empty($component['text']) && !$request->filled('footer')) {
+                    $request->merge(['footer' => $component['text']]);
+                }
+
+                if ($type === 'BUTTONS' && !empty($component['buttons']) && !$request->filled('buttons')) {
+                    $request->merge(['buttons' => $component['buttons']]);
+                }
+            }
+        }
+
+        // ==================================================
         // VALIDATION
         // ==================================================
 
@@ -1480,19 +1524,21 @@ class WhatsappTemplateController extends Controller
 
             foreach ($request->buttons as $button) {
 
+                $buttonType = strtoupper($button['type'] ?? '');
+
                 // ==========================================
                 // URL BUTTON
                 // ==========================================
 
-                if ($button['type'] === 'URL') {
+                if ($buttonType === 'URL') {
 
                     $buttonData = [
 
                         'type' => 'URL',
 
-                        'text' => $button['text'],
+                        'text' => $button['text'] ?? '',
 
-                        'url' => $button['url'],
+                        'url' => $button['url'] ?? '',
 
                     ];
 
@@ -1500,11 +1546,9 @@ class WhatsappTemplateController extends Controller
 
                     if (!empty($button['example'])) {
 
-                        $buttonData['example'] = [
-
-                            $button['example']
-
-                        ];
+                        $buttonData['example'] = is_array($button['example'])
+                            ? $button['example']
+                            : [$button['example']];
                     }
 
 
@@ -1520,7 +1564,7 @@ class WhatsappTemplateController extends Controller
 
                 elseif (
 
-                    $button['type'] === 'PHONE_NUMBER'
+                    $buttonType === 'PHONE_NUMBER'
 
                 ) {
 
@@ -1528,11 +1572,11 @@ class WhatsappTemplateController extends Controller
 
                         'type' => 'PHONE_NUMBER',
 
-                        'text' => $button['text'],
+                        'text' => $button['text'] ?? '',
 
                         'phone_number' =>
 
-                        $button['phone_number'],
+                        $button['phone_number'] ?? $button['phoneNumber'] ?? '',
 
                     ];
                 }
@@ -1545,7 +1589,7 @@ class WhatsappTemplateController extends Controller
 
                 elseif (
 
-                    $button['type'] === 'QUICK_REPLY'
+                    $buttonType === 'QUICK_REPLY'
 
                 ) {
 
@@ -1553,7 +1597,7 @@ class WhatsappTemplateController extends Controller
 
                         'type' => 'QUICK_REPLY',
 
-                        'text' => $button['text'],
+                        'text' => $button['text'] ?? '',
 
                     ];
                 }
