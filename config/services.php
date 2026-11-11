@@ -67,6 +67,7 @@ return [
         'graph_version' => env('FACEBOOK_GRAPH_VERSION', 'v21.0'),
         'config_id' => env('FACEBOOK_CONFIG_ID', '1908588223842822'),
         'redirect_uri' => env('META_REDIRECT_URI', 'https://generic-turbofan-rundown.ngrok-free.dev/api/social/facebook/callback'),
+        'webhook_verify_token' => env('FACEBOOK_WEBHOOK_VERIFY_TOKEN', env('WHATSAPP_WEBHOOK_VERIFY_TOKEN', 'crm-throbtech-verify-token')),
     ],
 
 ];

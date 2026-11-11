@@ -261,12 +261,15 @@ class SocialInboxService
                     $this->metaApi->subscribePageToWebhooks($account->account_id, $account->access_token);
                 }
 
+                $linkedPageId = $account->metadata['linked_facebook_page_id'] ?? null;
+
                 // 1. Fetch Direct Message conversations from Graph API
                 $metaConversations = $this->metaApi->getConversations(
                     $account->platform,
                     $account->account_id,
                     $account->access_token,
-                    30
+                    30,
+                    $linkedPageId
                 );
 
                 foreach ($metaConversations as $metaConv) {
@@ -277,12 +280,13 @@ class SocialInboxService
                     $snippet = $metaConv['snippet'] ?? '';
                     $unreadCount = (int) ($metaConv['unread_count'] ?? 0);
 
-                    // Determine customer participant (the one who is not the connected account)
+                    // Determine customer participant (the one who is not the connected account or linked page)
                     $participants = $metaConv['participants']['data'] ?? [];
                     $customerPart = null;
+                    $selfIds = array_filter([(string) $account->account_id, (string) $linkedPageId]);
 
                     foreach ($participants as $p) {
-                        if ((string) ($p['id'] ?? '') !== (string) $account->account_id) {
+                        if (!in_array((string) ($p['id'] ?? ''), $selfIds, true)) {
                             $customerPart = $p;
                             break;
                         }
@@ -371,7 +375,8 @@ class SocialInboxService
         $fromId = (string) ($from['id'] ?? '');
         $fromName = (string) ($from['name'] ?? $from['username'] ?? '');
 
-        $isFromAccount = ($fromId === (string) $account->account_id);
+        $linkedPageId = $account->metadata['linked_facebook_page_id'] ?? null;
+        $isFromAccount = ($fromId === (string) $account->account_id || ($linkedPageId && $fromId === (string) $linkedPageId));
         $senderType = $isFromAccount ? SocialMessage::SENDER_AGENT : SocialMessage::SENDER_CUSTOMER;
 
         $message = SocialMessage::updateOrCreate(

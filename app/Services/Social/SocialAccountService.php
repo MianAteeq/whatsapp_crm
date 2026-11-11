@@ -13,7 +13,8 @@ use Exception;
 class SocialAccountService
 {
     public function __construct(
-        protected MetaGraphApiService $metaApi
+        protected MetaGraphApiService $metaApi,
+        protected FacebookPageSubscriptionService $subscriptionService
     ) {}
 
     /**
@@ -185,6 +186,12 @@ class SocialAccountService
             $pagePicture = $page['picture']['data']['url'] ?? null;
             $category = $page['category'] ?? null;
 
+            // Deactivate any stale connections of this same Page ID in other tenants
+            SocialAccount::where('platform', 'facebook')
+                ->where('account_id', $pageId)
+                ->where('tenant_id', '!=', $tenantId)
+                ->update(['is_active' => false]);
+
             // Upsert Facebook Page (restoring if previously soft-deleted)
             $fbAccount = SocialAccount::withTrashed()->firstOrNew([
                 'tenant_id' => $tenantId,
@@ -208,11 +215,15 @@ class SocialAccountService
             $fbAccount->deleted_at = null; // Restore if previously soft-deleted
             $fbAccount->save();
 
+            // Automatically subscribe the Facebook Page to webhooks
+            $subResult = $this->subscriptionService->subscribePage($fbAccount);
+
             $connectedAccounts[] = [
                 'id' => $fbAccount->id,
                 'platform' => 'facebook',
                 'name' => $fbAccount->name,
                 'account_id' => $fbAccount->account_id,
+                'webhook_status' => $subResult['status'] ?? $fbAccount->webhook_status,
             ];
 
             // Connect linked Instagram Professional Account if present
@@ -292,11 +303,25 @@ class SocialAccountService
     }
 
     /**
-     * Disconnect account
+     * Disconnect account and unsubscribe from webhooks
      */
     public function disconnectAccount(int $tenantId, int $accountId): bool
     {
         $account = SocialAccount::forTenant($tenantId)->findOrFail($accountId);
+
+        if ($account->platform === 'facebook') {
+            try {
+                $this->subscriptionService->unsubscribePage($account);
+            } catch (\Throwable $e) {
+                Log::warning("[SocialAccountService] Error unsubscribing page during disconnect: " . $e->getMessage());
+            }
+        }
+
+        $account->update([
+            'is_active' => false,
+            'webhook_status' => SocialAccount::STATUS_DISCONNECTED,
+        ]);
+
         return (bool) $account->delete();
     }
 }

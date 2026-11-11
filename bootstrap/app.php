@@ -21,11 +21,21 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
         $middleware->validateCsrfTokens(except: [
             'webhook/*',
+            'webhooks/*',
             'api/webhook/*',
+            'api/webhooks/*',
+            'social/*',
+            'api/social/*',
+            'v1/social/*',
+            'api/v1/social/*',
             'whatsapp/*',
             'api/whatsapp/*',
             'webhook/whatsapp',
             'api/webhook/whatsapp',
+            'webhooks/facebook',
+            'api/webhooks/facebook',
+            'webhook/facebook',
+            'api/webhook/facebook',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

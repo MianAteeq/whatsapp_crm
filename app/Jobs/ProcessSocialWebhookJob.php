@@ -23,6 +23,7 @@ class ProcessSocialWebhookJob implements ShouldQueue
 
     public int $tries = 3;
     public int $timeout = 60;
+    public array $backoff = [10, 30, 60];
 
     public function __construct(
         public array $payload
@@ -37,18 +38,33 @@ class ProcessSocialWebhookJob implements ShouldQueue
 
         foreach ($entries as $entry) {
             $entryAccountId = (string) ($entry['id'] ?? '');
+            Log::info("[ProcessSocialWebhookJob] Incoming entry id={$entryAccountId}, keys=" . implode(',', array_keys($entry)) . ", payload=" . json_encode($entry));
 
-            // 1. Process messaging events (Facebook Messenger & Instagram Direct)
+            // 1. Process messaging events (Facebook Messenger & Instagram Direct via entry.messaging)
             if (!empty($entry['messaging'])) {
                 foreach ($entry['messaging'] as $event) {
                     $this->processMessagingEvent($object, $entryAccountId, $event, $metaApi);
                 }
             }
 
-            // 2. Process changes (Facebook feed comments & Instagram comments)
+            // 2. Process changes (Feed comments, Instagram comments, Leadgen, and Instagram direct messages via entry.changes)
             if (!empty($entry['changes'])) {
                 foreach ($entry['changes'] as $change) {
-                    $this->processChangeEvent($object, $entryAccountId, $change);
+                    $field = $change['field'] ?? '';
+                    if (in_array($field, ['messages', 'messaging', 'messaging_postbacks', 'messaging_seen', 'message_deliveries', 'message_reads'])) {
+                        $val = $change['value'] ?? [];
+                        if (isset($val['sender']) || isset($val['message']) || isset($val['postback']) || isset($val['delivery']) || isset($val['read'])) {
+                            $this->processMessagingEvent($object, $entryAccountId, $val, $metaApi);
+                        } elseif (is_array($val)) {
+                            foreach ($val as $subEvent) {
+                                if (is_array($subEvent)) {
+                                    $this->processMessagingEvent($object, $entryAccountId, $subEvent, $metaApi);
+                                }
+                            }
+                        }
+                    } else {
+                        $this->processChangeEvent($object, $entryAccountId, $change);
+                    }
                 }
             }
         }
@@ -59,36 +75,77 @@ class ProcessSocialWebhookJob implements ShouldQueue
      */
     protected function resolveSocialAccount(string $object, string $entryAccountId, string $recipientId, string $senderId): ?SocialAccount
     {
-        // 1. Match by account_id on recipient or entry id
-        $query = SocialAccount::active();
-        if ($object === 'instagram') {
-            $query->where('platform', 'instagram');
-        } elseif ($object === 'page') {
-            $query->where('platform', 'facebook');
-        }
-
-        $account = (clone $query)->whereIn('account_id', array_filter([$recipientId, $entryAccountId]))->first();
-        if ($account) {
-            return $account;
-        }
-
-        // 2. If object is instagram, match via linked_facebook_page_id in metadata
-        if ($object === 'instagram') {
+        // 1. Direct match on recipient_id (inbound message delivered to our Page or Instagram account)
+        if (!empty($recipientId)) {
             $account = SocialAccount::active()
-                ->where('platform', 'instagram')
-                ->where(function ($q) use ($recipientId, $entryAccountId) {
-                    $q->whereJsonContains('metadata->linked_facebook_page_id', $recipientId)
-                      ->orWhereJsonContains('metadata->linked_facebook_page_id', $entryAccountId);
-                })
+                ->where('account_id', $recipientId)
+                ->latest('connected_at')
                 ->first();
             if ($account) {
                 return $account;
             }
         }
 
-        // 3. Match by sender_id in case of echo messages
+        // 2. Direct match on sender_id (outbound / echo message sent by our Page or Instagram account)
+        if (!empty($senderId)) {
+            $account = SocialAccount::active()
+                ->where('account_id', $senderId)
+                ->latest('connected_at')
+                ->first();
+            if ($account) {
+                return $account;
+            }
+        }
+
+        // 3. Match by entryAccountId with platform awareness
+        if (!empty($entryAccountId)) {
+            if ($object === 'instagram') {
+                $account = SocialAccount::active()
+                    ->where('platform', 'instagram')
+                    ->where(function ($q) use ($entryAccountId) {
+                        $q->where('account_id', $entryAccountId)
+                          ->orWhereJsonContains('metadata->linked_facebook_page_id', $entryAccountId)
+                          ->orWhere('metadata->linked_facebook_page_id', $entryAccountId);
+                    })
+                    ->latest('connected_at')
+                    ->first();
+                if ($account) {
+                    return $account;
+                }
+            } else {
+                // Object is 'page' or generic - check if recipient or sender is an Instagram account connected to this page
+                $igAccount = SocialAccount::active()
+                    ->where('platform', 'instagram')
+                    ->where(function ($q) use ($recipientId, $senderId, $entryAccountId) {
+                        $q->whereIn('account_id', array_filter([$recipientId, $senderId]))
+                          ->orWhereJsonContains('metadata->linked_facebook_page_id', $entryAccountId);
+                    })
+                    ->latest('connected_at')
+                    ->first();
+
+                if ($igAccount && (!empty($recipientId) && $igAccount->account_id === $recipientId || !empty($senderId) && $igAccount->account_id === $senderId)) {
+                    return $igAccount;
+                }
+
+                $fbAccount = SocialAccount::active()
+                    ->where('platform', 'facebook')
+                    ->where('account_id', $entryAccountId)
+                    ->latest('connected_at')
+                    ->first();
+                if ($fbAccount) {
+                    return $fbAccount;
+                }
+
+                if ($igAccount) {
+                    return $igAccount;
+                }
+            }
+        }
+
+        // 4. Fallback: match any active account matching any of the candidate IDs
         return SocialAccount::active()
-            ->whereIn('account_id', array_filter([$senderId]))
+            ->whereIn('account_id', array_filter([$recipientId, $entryAccountId, $senderId]))
+            ->latest('connected_at')
             ->first();
     }
 
@@ -105,15 +162,21 @@ class ProcessSocialWebhookJob implements ShouldQueue
         $recipientId = (string) ($event['recipient']['id'] ?? '');
         $timestamp = isset($event['timestamp']) ? date('Y-m-d H:i:s', (int) ($event['timestamp'] / 1000)) : now();
 
+        Log::info("[ProcessSocialWebhookJob] Processing messaging event: object={$object}, sender={$senderId}, recipient={$recipientId}, entry={$entryAccountId}");
+
         $account = $this->resolveSocialAccount($object, $entryAccountId, $recipientId, $senderId);
 
         if (!$account) {
-            Log::debug("[ProcessSocialWebhookJob] No active social account found matching recipient '{$recipientId}', entry '{$entryAccountId}', or sender '{$senderId}'");
+            Log::warning("[ProcessSocialWebhookJob] No active social account found matching recipient '{$recipientId}', entry '{$entryAccountId}', or sender '{$senderId}'");
             return;
         }
 
         $tenantId = $account->tenant_id;
         $platform = $account->platform; // 'facebook' or 'instagram'
+        Log::info("[ProcessSocialWebhookJob] Resolved to {$platform} account ID #{$account->id} ('{$account->name}') for tenant {$tenantId}");
+
+        // Record last webhook received time for this tenant's social account
+        $account->update(['last_webhook_received_at' => now()]);
 
         // A. Inbound Message Event or Postback Event
         if (!empty($event['message']) || !empty($event['postback'])) {
@@ -241,6 +304,23 @@ class ProcessSocialWebhookJob implements ShouldQueue
             } catch (\Throwable $e) {
                 Log::warning("[ProcessSocialWebhookJob] Broadcasting failed (non-fatal): " . $e->getMessage());
             }
+
+            // TRIGGER CRM WORKFLOW AUTOMATION FOR THIS TENANT
+            try {
+                if (class_exists(\App\Services\Workflow\WorkflowTriggerManager::class)) {
+                    \App\Services\Workflow\WorkflowTriggerManager::dispatchEvent(
+                        'incoming_message',
+                        $tenantId,
+                        [
+                            'message' => $socialMsg,
+                            'contact' => $conversation->contact,
+                            'platform' => $platform,
+                        ]
+                    );
+                }
+            } catch (\Throwable $e) {
+                Log::warning("[ProcessSocialWebhookJob] Workflow trigger dispatch failed (non-fatal): " . $e->getMessage());
+            }
         }
 
         // B. Delivery Event
@@ -282,26 +362,65 @@ class ProcessSocialWebhookJob implements ShouldQueue
         $value = $change['value'] ?? [];
 
         // 1. Facebook Page feed comments
-        if ($field === 'feed' && ($value['item'] ?? '') === 'comment') {
+        if ($field === 'feed') {
+            $verb = (string) ($value['verb'] ?? 'add');
             $commentId = (string) ($value['comment_id'] ?? '');
-            $postId = (string) ($value['post_id'] ?? '');
-            $message = (string) ($value['message'] ?? '');
-            $fromId = (string) ($value['from']['id'] ?? '');
-            $fromName = (string) ($value['from']['name'] ?? 'User');
 
-            $account = SocialAccount::active()->where('account_id', $entryAccountId)->first();
-            if (!$account || $fromId === (string) $account->account_id) {
+            // Ignore deletions, reactions or events without a comment_id
+            if ($verb === 'remove' || $verb === 'hide' || empty($commentId)) {
                 return;
             }
 
-            $this->persistCommentEvent($account, $commentId, $postId, $fromId, $fromName, null, $message);
+            $postId = (string) ($value['post_id'] ?? '');
+            $parentId = (string) ($value['parent_id'] ?? '');
+            $message = (string) ($value['message'] ?? '');
+            $from = $value['from'] ?? [];
+            $fromId = (string) ($from['id'] ?? '');
+            $fromName = (string) ($from['name'] ?? 'User');
+
+            $account = SocialAccount::active()
+                ->where('platform', 'facebook')
+                ->where('account_id', $entryAccountId)
+                ->latest('connected_at')
+                ->first();
+
+            if (!$account) {
+                $account = SocialAccount::active()
+                    ->where('platform', 'facebook')
+                    ->latest('connected_at')
+                    ->first();
+            }
+
+            if (!$account) {
+                Log::warning("[ProcessSocialWebhookJob] Facebook comment event dropped: no active Facebook account matching {$entryAccountId}");
+                return;
+            }
+
+            $isAgent = ($fromId === (string) $account->account_id);
+
+            $this->persistCommentEvent(
+                account: $account,
+                commentId: $commentId,
+                postOrMediaId: $postId,
+                parentId: $parentId,
+                fromId: $fromId,
+                fromName: $fromName,
+                fromUsername: null,
+                message: $message,
+                isAgent: $isAgent
+            );
         }
 
         // 2. Instagram media comments
         if ($field === 'comments') {
             $commentId = (string) ($value['id'] ?? '');
+            if (empty($commentId)) {
+                return;
+            }
+
             $message = (string) ($value['text'] ?? '');
             $mediaId = (string) ($value['media']['id'] ?? '');
+            $parentId = (string) ($value['parent_id'] ?? '');
             $from = $value['from'] ?? [];
             $fromId = (string) ($from['id'] ?? '');
             $fromUsername = (string) ($from['username'] ?? 'User');
@@ -310,15 +429,37 @@ class ProcessSocialWebhookJob implements ShouldQueue
                 ->where('platform', 'instagram')
                 ->where(function ($q) use ($entryAccountId) {
                     $q->where('account_id', $entryAccountId)
-                      ->orWhereJsonContains('metadata->linked_facebook_page_id', $entryAccountId);
+                      ->orWhereJsonContains('metadata->linked_facebook_page_id', $entryAccountId)
+                      ->orWhere('metadata->linked_facebook_page_id', $entryAccountId);
                 })
+                ->latest('connected_at')
                 ->first();
 
-            if (!$account || $fromId === (string) $account->account_id) {
+            if (!$account) {
+                $account = SocialAccount::active()
+                    ->where('platform', 'instagram')
+                    ->latest('connected_at')
+                    ->first();
+            }
+
+            if (!$account) {
+                Log::warning("[ProcessSocialWebhookJob] Instagram comment event dropped: no active Instagram account matching {$entryAccountId}");
                 return;
             }
 
-            $this->persistCommentEvent($account, $commentId, $mediaId, $fromId, $fromUsername, $fromUsername, $message);
+            $isAgent = ($fromId === (string) $account->account_id);
+
+            $this->persistCommentEvent(
+                account: $account,
+                commentId: $commentId,
+                postOrMediaId: $mediaId,
+                parentId: $parentId,
+                fromId: $fromId,
+                fromName: $fromUsername,
+                fromUsername: $fromUsername,
+                message: $message,
+                isAgent: $isAgent
+            );
         }
 
         // 3. Meta Lead Ads Event (Facebook & Instagram Leadgen Webhook)
@@ -355,10 +496,12 @@ class ProcessSocialWebhookJob implements ShouldQueue
         SocialAccount $account,
         string $commentId,
         string $postOrMediaId,
+        ?string $parentId,
         string $fromId,
         string $fromName,
         ?string $fromUsername,
-        string $message
+        string $message,
+        bool $isAgent = false
     ): void {
         $tenantId = $account->tenant_id;
 
@@ -371,7 +514,13 @@ class ProcessSocialWebhookJob implements ShouldQueue
                 'event_type' => 'comments',
                 'sender_id' => $fromId,
                 'recipient_id' => $account->account_id,
-                'payload' => ['comment_id' => $commentId, 'post_id' => $postOrMediaId, 'message' => $message],
+                'payload' => [
+                    'comment_id' => $commentId,
+                    'post_id' => $postOrMediaId,
+                    'parent_id' => $parentId,
+                    'message' => $message,
+                    'is_agent' => $isAgent,
+                ],
             ]
         );
 
@@ -379,28 +528,53 @@ class ProcessSocialWebhookJob implements ShouldQueue
             return;
         }
 
-        $conv = SocialConversation::firstOrCreate(
-            [
-                'tenant_id' => $tenantId,
-                'social_account_id' => $account->id,
-                'platform_conversation_id' => $commentId,
-                'conversation_type' => SocialConversation::TYPE_COMMENT,
-            ],
-            [
-                'platform' => $account->platform,
-                'participant_id' => $fromId,
-                'participant_name' => $fromName,
-                'participant_username' => $fromUsername,
-                'status' => SocialConversation::STATUS_OPEN,
-                'priority' => SocialConversation::PRIORITY_NORMAL,
-                'post_reference_id' => $postOrMediaId,
-                'last_message_at' => now(),
-                'last_message_preview' => $message,
-                'last_message_sender' => 'customer',
-                'is_unread' => true,
-                'unread_count' => 1,
-            ]
-        );
+        // Determine if this is a reply to an existing comment
+        $conv = null;
+        if (!empty($parentId) && $parentId !== $postOrMediaId) {
+            // 1. Try finding conversation where platform_conversation_id = $parentId
+            $conv = SocialConversation::where('tenant_id', $tenantId)
+                ->where('social_account_id', $account->id)
+                ->where('platform_conversation_id', $parentId)
+                ->first();
+
+            // 2. Or matching a conversation that contains a message with platform_message_id = $parentId
+            if (!$conv) {
+                $parentMsg = SocialMessage::where('tenant_id', $tenantId)
+                    ->where('platform_message_id', $parentId)
+                    ->first();
+                if ($parentMsg && $parentMsg->conversation) {
+                    $conv = $parentMsg->conversation;
+                }
+            }
+        }
+
+        // If no parent conversation found, create or find root comment conversation
+        if (!$conv) {
+            $conv = SocialConversation::firstOrCreate(
+                [
+                    'tenant_id' => $tenantId,
+                    'social_account_id' => $account->id,
+                    'platform_conversation_id' => $commentId,
+                    'conversation_type' => SocialConversation::TYPE_COMMENT,
+                ],
+                [
+                    'platform' => $account->platform,
+                    'participant_id' => $fromId ?: $commentId,
+                    'participant_name' => $fromName,
+                    'participant_username' => $fromUsername,
+                    'status' => SocialConversation::STATUS_OPEN,
+                    'priority' => SocialConversation::PRIORITY_NORMAL,
+                    'post_reference_id' => $postOrMediaId,
+                    'last_message_at' => now(),
+                    'last_message_preview' => $message,
+                    'last_message_sender' => $isAgent ? 'agent' : 'customer',
+                    'is_unread' => !$isAgent,
+                    'unread_count' => $isAgent ? 0 : 1,
+                ]
+            );
+        }
+
+        $senderType = $isAgent ? SocialMessage::SENDER_AGENT : SocialMessage::SENDER_CUSTOMER;
 
         $socialMsg = SocialMessage::firstOrCreate(
             [
@@ -410,8 +584,8 @@ class ProcessSocialWebhookJob implements ShouldQueue
             [
                 'social_conversation_id' => $conv->id,
                 'social_account_id' => $account->id,
-                'sender_type' => SocialMessage::SENDER_CUSTOMER,
-                'sender_id' => $fromId,
+                'sender_type' => $senderType,
+                'sender_id' => $fromId ?: (string) $account->account_id,
                 'sender_name' => $fromName,
                 'message_text' => $message,
                 'status' => SocialMessage::STATUS_DELIVERED,
@@ -422,19 +596,33 @@ class ProcessSocialWebhookJob implements ShouldQueue
         $conv->update([
             'last_message_at' => now(),
             'last_message_preview' => $message,
-            'last_message_sender' => 'customer',
-            'is_unread' => true,
-            'unread_count' => $conv->unread_count + 1,
+            'last_message_sender' => $isAgent ? 'agent' : 'customer',
+            'is_unread' => $isAgent ? $conv->is_unread : true,
+            'unread_count' => $isAgent ? $conv->unread_count : ($conv->unread_count + 1),
         ]);
 
         $eventRecord->update(['processed' => true, 'processed_at' => now()]);
 
         // Real-time broadcast
         try {
-            broadcast(new SocialMessageReceived($conv->fresh(['account', 'assignee', 'tags']), $socialMsg->fresh(['attachments', 'agentUser'])));
+            broadcast(new SocialMessageReceived(
+                $conv->fresh(['account', 'assignee', 'tags']),
+                $socialMsg->fresh(['attachments', 'agentUser'])
+            ));
             Log::info("[ProcessSocialWebhookJob] Broadcasted SocialMessageReceived for comment conversation #{$conv->id}");
         } catch (\Throwable $e) {
             Log::warning("[ProcessSocialWebhookJob] Broadcasting comment failed (non-fatal): " . $e->getMessage());
         }
+    }
+
+    /**
+     * Handle failed job execution after max retries
+     */
+    public function failed(\Throwable $exception): void
+    {
+        Log::error("[ProcessSocialWebhookJob] Job failed permanently after retries: " . $exception->getMessage(), [
+            'exception' => $exception,
+            'payload' => $this->payload,
+        ]);
     }
 }

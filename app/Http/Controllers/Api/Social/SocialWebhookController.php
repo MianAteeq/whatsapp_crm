@@ -31,13 +31,14 @@ class SocialWebhookController extends Controller
                   ?? $request->input('hub_challenge') 
                   ?? $request->input('hub.challenge');
 
-        $validTokens = array_filter([
+        $configuredTokens = array_filter([
+            config('services.facebook.webhook_verify_token'),
             env('FACEBOOK_WEBHOOK_VERIFY_TOKEN'),
             env('WHATSAPP_WEBHOOK_VERIFY_TOKEN'),
-            'crm-throbtech-verify-token',
-            'CRM_VERIFY_TOKEN_XYZ',
             'talkinexx-verify-token',
             'crm-talkinexx-verify-token',
+            'crm-throbtech-verify-token',
+            'CRM_VERIFY_TOKEN_XYZ',
         ]);
 
         Log::info('[SocialWebhookController] Meta Verification Request:', [
@@ -46,14 +47,23 @@ class SocialWebhookController extends Controller
             'challenge' => $challenge ? 'PROVIDED' : 'MISSING',
         ]);
 
-        if ($mode === 'subscribe' && in_array($token, $validTokens, true)) {
+        $isVerified = false;
+        if ($mode === 'subscribe' && !empty($token)) {
+            foreach ($configuredTokens as $expected) {
+                if (hash_equals((string) $expected, (string) $token)) {
+                    $isVerified = true;
+                    break;
+                }
+            }
+        }
+
+        if ($isVerified) {
             Log::info('[SocialWebhookController] Meta Webhook Verified Successfully!');
             return response($challenge, 200)->header('Content-Type', 'text/plain');
         }
 
         Log::warning('[SocialWebhookController] Verification Failed: token mismatch.', [
             'received' => $token,
-            'valid_tokens' => $validTokens,
         ]);
 
         return response('Forbidden', 403);
@@ -68,13 +78,18 @@ class SocialWebhookController extends Controller
         $rawPayload = $request->getContent();
         $appSecret = (string) config('services.facebook.app_secret', env('FACEBOOK_APP_SECRET', ''));
 
-        // Validate HMAC-SHA256 signature if app secret and signature are present
-        if ($appSecret && $signature) {
-            $rawSignature = str_starts_with($signature, 'sha256=') ? substr($signature, 7) : $signature;
+        // Validate HMAC-SHA256 signature when Meta App Secret is configured
+        if (!empty($appSecret)) {
+            if (!$signature || !str_starts_with(strtolower($signature), 'sha256=')) {
+                Log::warning('[SocialWebhookController] Missing or malformed X-Hub-Signature-256 header.');
+                return response()->json(['error' => 'Missing or invalid signature header'], 401);
+            }
+
+            $rawSignature = substr($signature, 7);
             $expectedHash = hash_hmac('sha256', $rawPayload, $appSecret);
 
             if (!hash_equals($expectedHash, $rawSignature)) {
-                Log::warning('[SocialWebhookController] Invalid X-Hub-Signature-256 HMAC signature detected');
+                Log::warning('[SocialWebhookController] Invalid X-Hub-Signature-256 HMAC signature detected.');
                 return response()->json(['error' => 'Invalid signature'], 403);
             }
         }

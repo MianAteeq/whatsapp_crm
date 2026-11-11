@@ -4,15 +4,18 @@ namespace App\Http\Controllers\Api\Social;
 
 use App\Http\Controllers\Controller;
 use App\Models\SocialAccount;
+use App\Services\Social\FacebookPageSubscriptionService;
 use App\Services\Social\SocialAccountService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Exception;
 
 class SocialAccountController extends Controller
 {
     public function __construct(
-        protected SocialAccountService $accountService
+        protected SocialAccountService $accountService,
+        protected FacebookPageSubscriptionService $subscriptionService
     ) {}
 
     protected function getTenantId(Request $request): int
@@ -261,6 +264,24 @@ class SocialAccountController extends Controller
     public function disconnect(Request $request, int $id): JsonResponse
     {
         return $this->destroy($request, $id);
+    }
+
+    /**
+     * Retry Facebook Webhook subscription for a Page
+     * POST /api/social/accounts/{id}/retry-webhook
+     */
+    public function retryWebhook(Request $request, int $id): JsonResponse
+    {
+        $tenantId = $this->getTenantId($request);
+        $result = $this->subscriptionService->retrySubscription($tenantId, $id);
+        $account = SocialAccount::forTenant($tenantId)->find($id);
+
+        return response()->json([
+            'success' => $result['success'],
+            'message' => $result['message'],
+            'status'  => $result['status'] ?? ($account?->webhook_status),
+            'account' => $account,
+        ], $result['success'] ? 200 : 422);
     }
 }
 

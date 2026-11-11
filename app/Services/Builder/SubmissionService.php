@@ -69,18 +69,82 @@ class SubmissionService
         ?string $pageSlug = null,
         ?string $ipAddress = null,
         ?string $userAgent = null,
-        ?string $referer = null
+        ?string $referer = null,
+        array $utmParams = []
     ): array {
-        // 1. Resolve Form
-        $form = BuilderForm::where('slug', $formSlug)
-            ->where('status', BuilderForm::STATUS_PUBLISHED)
-            ->firstOrFail();
-
-        // 2. Resolve Page if supplied
+        // 1. Resolve Form and/or Page
+        $form = null;
         $page = null;
+
+        // Try to find by form slug first
+        $form = BuilderForm::where('slug', $formSlug)->first();
+
+        // If not found by slug, check if formSlug is numeric ID or submittedData has form_id
+        if (!$form && is_numeric($formSlug)) {
+            $form = BuilderForm::find((int) $formSlug);
+        }
+        if (!$form && !empty($submittedData['form_id'])) {
+            $form = BuilderForm::find((int) $submittedData['form_id']);
+        }
+
+        // If pageSlug is provided, find page
         if (!empty($pageSlug)) {
             $page = BuilderPage::where('slug', $pageSlug)->first();
-        } elseif ($form->page_id) {
+        }
+
+        // If form still not found, check if $formSlug is actually a PAGE slug!
+        if (!$form) {
+            $candidatePage = BuilderPage::where('slug', $formSlug)->first();
+            if ($candidatePage) {
+                $page = $candidatePage;
+                $pageSlug = $page->slug;
+
+                // Check if the page has a connected form in its sections or forms relation
+                if (!empty($submittedData['form_id'])) {
+                    $form = BuilderForm::where('tenant_id', $page->tenant_id)->find($submittedData['form_id']);
+                }
+
+                if (!$form) {
+                    $form = $page->forms()->first();
+                }
+
+                // If page still has no form record, auto-create / find default contact form for this page
+                if (!$form) {
+                    $form = BuilderForm::firstOrCreate(
+                        [
+                            'tenant_id' => $page->tenant_id,
+                            'page_id' => $page->id,
+                            'form_type' => BuilderForm::TYPE_CONTACT_FORM,
+                        ],
+                        [
+                            'user_id' => $page->user_id,
+                            'title' => ($page->title ?: 'Landing Page') . ' - Contact Form',
+                            'slug' => ($page->slug ?: 'page-' . $page->id) . '-contact',
+                            'status' => BuilderForm::STATUS_PUBLISHED,
+                            'schema' => [
+                                'fields' => [
+                                    ['name' => 'name', 'label' => 'Full Name', 'type' => 'text', 'required' => true],
+                                    ['name' => 'email', 'label' => 'Email Address', 'type' => 'email', 'required' => true],
+                                    ['name' => 'phone', 'label' => 'Phone Number', 'type' => 'tel', 'required' => false],
+                                    ['name' => 'message', 'label' => 'Message', 'type' => 'textarea', 'required' => false],
+                                ],
+                            ],
+                            'settings' => [
+                                'thank_you_message' => 'Thank you! Your inquiry has been received.',
+                            ],
+                        ]
+                    );
+                }
+            }
+        }
+
+        // If still no form, throw clean exception
+        if (!$form) {
+            throw new Exception("Form or landing page with slug '{$formSlug}' not found or is currently unavailable.");
+        }
+
+        // Resolve Page if not resolved yet
+        if (!$page && $form->page_id) {
             $page = $form->page;
         }
 
@@ -123,10 +187,11 @@ class SubmissionService
         }
 
         // Extract UTM parameters if present
-        $utmParams = [];
-        foreach (['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'] as $utm) {
-            if (!empty($submittedData[$utm])) {
-                $utmParams[$utm] = strip_tags($submittedData[$utm]);
+        if (empty($utmParams)) {
+            foreach (['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'] as $utm) {
+                if (!empty($submittedData[$utm])) {
+                    $utmParams[$utm] = strip_tags($submittedData[$utm]);
+                }
             }
         }
 

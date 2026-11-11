@@ -13,6 +13,12 @@ class SocialAccount extends Model
 {
     use HasFactory, SoftDeletes;
 
+    public const STATUS_CONNECTED = 'connected';
+    public const STATUS_WEBHOOK_PENDING = 'webhook_pending';
+    public const STATUS_WEBHOOK_ACTIVE = 'webhook_active';
+    public const STATUS_WEBHOOK_FAILED = 'webhook_failed';
+    public const STATUS_DISCONNECTED = 'disconnected';
+
     protected $table = 'social_accounts';
 
     protected $fillable = [
@@ -25,6 +31,10 @@ class SocialAccount extends Model
         'access_token',
         'token_expires_at',
         'is_active',
+        'webhook_status',
+        'webhook_subscription_error',
+        'last_webhook_received_at',
+        'last_synced_at',
         'category',
         'followers_count',
         'connected_at',
@@ -42,6 +52,8 @@ class SocialAccount extends Model
         'access_token' => 'encrypted',
         'token_expires_at' => 'datetime',
         'connected_at' => 'datetime',
+        'last_webhook_received_at' => 'datetime',
+        'last_synced_at' => 'datetime',
         'is_active' => 'boolean',
         'metadata' => 'array',
         'followers_count' => 'integer',
@@ -85,6 +97,16 @@ class SocialAccount extends Model
     public function scopePlatform(Builder $query, string $platform): Builder
     {
         return $query->where('platform', $platform);
+    }
+
+    public function scopeWebhookActive(Builder $query): Builder
+    {
+        return $query->where('webhook_status', self::STATUS_WEBHOOK_ACTIVE);
+    }
+
+    public function isWebhookActive(): bool
+    {
+        return $this->webhook_status === self::STATUS_WEBHOOK_ACTIVE;
     }
 }
 

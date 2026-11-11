@@ -716,20 +716,70 @@ class MetaGraphApiService
     /**
      * Fetch conversations for Facebook Page or Instagram Business Account
      */
-    public function getConversations(string $platform, string $accountId, string $accessToken, int $limit = 50): array
-    {
-        $params = [
-            'fields' => 'id,updated_time,participants,snippet,unread_count,messages.limit(20){id,message,created_time,from,to,attachments{id,mime_type,name,image_data,video_data,file_url}}',
-            'limit' => $limit,
-        ];
+    public function getConversations(
+        string $platform,
+        string $accountId,
+        string $accessToken,
+        int $limit = 50,
+        ?string $linkedPageId = null
+    ): array {
+        $fields = 'id,updated_time,participants,snippet,unread_count,messages.limit(20){id,message,created_time,from,to,attachments{id,mime_type,name,image_data,video_data,file_url}}';
 
         if ($platform === 'instagram') {
-            $params['platform'] = 'instagram';
+            // Attempt 1: Query Instagram User ID directly (standard IG Graph API)
+            $response = Http::withToken($accessToken)
+                ->timeout(25)
+                ->get("{$this->baseUrl}/{$accountId}/conversations", [
+                    'fields' => $fields,
+                    'limit' => $limit,
+                ]);
+
+            if ($response->successful() && !empty($response->json('data'))) {
+                Log::info("[MetaGraphApi] Retrieved " . count($response->json('data')) . " Instagram conversations directly for account {$accountId}");
+                return $response->json('data', []);
+            }
+
+            // Attempt 2: Query linked Facebook Page ID with platform=instagram (Meta Messenger Platform for IG)
+            $pageIdToQuery = $linkedPageId ?: $accountId;
+            $pageResponse = Http::withToken($accessToken)
+                ->timeout(25)
+                ->get("{$this->baseUrl}/{$pageIdToQuery}/conversations", [
+                    'platform' => 'instagram',
+                    'fields' => $fields,
+                    'limit' => $limit,
+                ]);
+
+            if ($pageResponse->successful() && !empty($pageResponse->json('data'))) {
+                Log::info("[MetaGraphApi] Retrieved " . count($pageResponse->json('data')) . " Instagram conversations via Page {$pageIdToQuery}");
+                return $pageResponse->json('data', []);
+            }
+
+            // Attempt 3: If accountId wasn't the page, also try accountId with platform=instagram
+            if ($pageIdToQuery !== $accountId) {
+                $hybridResponse = Http::withToken($accessToken)
+                    ->timeout(25)
+                    ->get("{$this->baseUrl}/{$accountId}/conversations", [
+                        'platform' => 'instagram',
+                        'fields' => $fields,
+                        'limit' => $limit,
+                    ]);
+
+                if ($hybridResponse->successful() && !empty($hybridResponse->json('data'))) {
+                    return $hybridResponse->json('data', []);
+                }
+            }
+
+            Log::info("[MetaGraphApi] Instagram conversations query completed for {$accountId}. Status: " . ($response->status() ?? 'N/A') . ", Body: " . substr($response->body(), 0, 200));
+            return $response->json('data', []);
         }
 
+        // Standard Facebook Page conversations
         $response = Http::withToken($accessToken)
             ->timeout(25)
-            ->get("{$this->baseUrl}/{$accountId}/conversations", $params);
+            ->get("{$this->baseUrl}/{$accountId}/conversations", [
+                'fields' => $fields,
+                'limit' => $limit,
+            ]);
 
         if ($response->failed()) {
             Log::warning("[MetaGraphApi] Failed to fetch conversations for {$platform} account {$accountId}: " . $response->body());

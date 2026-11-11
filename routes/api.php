@@ -95,6 +95,14 @@ Route::get('/social/facebook/callback', [SocialAccountController::class, 'oauthC
 /**
  * Public Meta Webhook routes for Facebook Messenger & Instagram Direct
  */
+Route::get('/webhooks/facebook', [SocialWebhookController::class, 'verify']);
+Route::post('/webhooks/facebook', [SocialWebhookController::class, 'handle']);
+Route::get('/webhook/facebook', [SocialWebhookController::class, 'verify']);
+Route::post('/webhook/facebook', [SocialWebhookController::class, 'handle']);
+Route::get('/webhooks/instagram', [SocialWebhookController::class, 'verify']);
+Route::post('/webhooks/instagram', [SocialWebhookController::class, 'handle']);
+Route::get('/webhook/instagram', [SocialWebhookController::class, 'verify']);
+Route::post('/webhook/instagram', [SocialWebhookController::class, 'handle']);
 Route::get('/v1/social/webhook', [SocialWebhookController::class, 'verify']);
 Route::post('/v1/social/webhook', [SocialWebhookController::class, 'handle']);
 Route::get('/social/webhook', [SocialWebhookController::class, 'verify']);
@@ -497,6 +505,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/accounts/{id}/disconnect', [SocialAccountController::class, 'disconnect']);
         Route::post('/accounts/{id}/check-health', [SocialAccountController::class, 'checkHealth']);
         Route::post('/accounts/{id}/refresh-token', [SocialAccountController::class, 'refreshToken']);
+        Route::post('/accounts/{id}/retry-webhook', [SocialAccountController::class, 'retryWebhook']);
 
         // Media Upload
         Route::post('/media/upload', [SocialMediaUploadController::class, 'upload']);
