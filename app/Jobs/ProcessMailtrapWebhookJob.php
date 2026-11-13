@@ -51,7 +51,7 @@ class ProcessMailtrapWebhookJob implements ShouldQueue
      */
     protected function processSingleEvent(array $event): void
     {
-        $rawType = strtolower(trim((string)($event['event'] ?? '')));
+        $rawType = str_replace([' ', '-'], '_', strtolower(trim((string)($event['event'] ?? ''))));
         $rawMessageId = trim((string)($event['message_id'] ?? ''));
         $eventId = !empty($event['event_id']) ? trim((string)$event['event_id']) : null;
         $email = !empty($event['email']) ? strtolower(trim((string)$event['email'])) : null;
@@ -67,7 +67,7 @@ class ProcessMailtrapWebhookJob implements ShouldQueue
             'reject', 'dropped' => 'failed',
             'spam_complaint', 'spam', 'complaint' => 'complained',
             'unsubscribe', 'unsubscribed' => 'unsubscribed',
-            'deferral', 'deferred' => 'deferred',
+            'deferral', 'deferred', 'suspension' => 'deferred',
             'open', 'opened' => 'opened',
             'click', 'clicked' => 'clicked',
             default => $rawType,
@@ -94,43 +94,40 @@ class ProcessMailtrapWebhookJob implements ShouldQueue
             }
         }
 
-        // 2. Locate Recipient using provider_message_id (preferred) or email fallback
+        // 2. Correlate to the exact send, never just the latest email address.
+        // A standalone curl/test send may target an address in several campaigns.
         $recipient = null;
         if (!empty($messageId)) {
             $recipient = EmailCampaignRecipient::where('provider_message_id', $messageId)->first();
             
-            // Check without prefix/suffix if not matched
-            if (!$recipient) {
-                $recipient = EmailCampaignRecipient::where('provider_message_id', 'LIKE', "%{$messageId}%")->first();
-            }
         }
 
         // Fallback: check custom_variables passed in payload
-        if (!$recipient && !empty($event['custom_variables']['recipient_id'])) {
-            $recipient = EmailCampaignRecipient::find($event['custom_variables']['recipient_id']);
+        $variables = $event['custom_variables'] ?? [];
+        if (!$recipient && !empty($variables['recipient_id']) && !empty($variables['campaign_id'])) {
+            $query = EmailCampaignRecipient::whereKey($variables['recipient_id'])
+                ->where('campaign_id', $variables['campaign_id'])
+                ->where(function ($query) use ($messageId) {
+                    $query->whereNull('provider_message_id')->orWhere('provider_message_id', $messageId);
+                });
+            if (!empty($variables['tenant_id'])) {
+                $query->where('tenant_id', $variables['tenant_id']);
+            }
+            if ($email) {
+                $query->where('email', $email);
+            }
+            $recipient = $query->first();
         }
 
-        // Fallback: match by email on latest active/sending campaign
-        if (!$recipient && !empty($email)) {
-            $recipient = EmailCampaignRecipient::where('email', $email)
-                ->latest('updated_at')
-                ->first();
+        if ($recipient && $email && strcasecmp($recipient->email, $email) !== 0) {
+            $recipient = null;
         }
 
         if (!$recipient) {
-            Log::warning("[ProcessMailtrapWebhookJob] No recipient found matching message_id '{$messageId}' or email '{$email}'. Logging raw event.");
-            
-            // Store unlinked delivery event for audit
-            EmailDeliveryEvent::create([
-                'tenant_id' => 1,
-                'campaign_id' => null,
-                'recipient_id' => null,
-                'provider' => 'mailtrap',
-                'provider_message_id' => $messageId ?: null,
-                'provider_event_id' => $eventId,
+            Log::notice('[ProcessMailtrapWebhookJob] Ignoring event not linked to a campaign send.', [
+                'message_id' => $messageId,
+                'event_id' => $eventId,
                 'event_type' => $eventType,
-                'event_timestamp' => $timestamp,
-                'payload' => $event,
             ]);
             return;
         }

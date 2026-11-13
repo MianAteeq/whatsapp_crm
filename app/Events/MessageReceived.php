@@ -3,7 +3,7 @@
 namespace App\Events;
 
 use App\Models\Message;
-use Illuminate\Broadcasting\Channel;
+use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -28,8 +28,8 @@ class MessageReceived implements ShouldBroadcastNow
     public function broadcastOn(): array
     {
         return [
-            new Channel(
-                'tenant.' . $this->tenantId
+            new PrivateChannel(
+                'tenant.' . $this->tenantId . '.inbox'
             ),
         ];
     }

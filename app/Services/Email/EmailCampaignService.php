@@ -62,6 +62,7 @@ class EmailCampaignService
             'to_email' => $testEmail,
             'to_name' => 'Test Recipient',
             'subject' => $subject,
+            'category' => 'Campaign Test',
             'html_body' => $htmlBody,
             'text_body' => $textBody,
         ]);
@@ -70,7 +71,7 @@ class EmailCampaignService
             throw new \RuntimeException($result['error'] ?? 'Failed to send test email.');
         }
 
-        return $result;
+        return [...$result, 'provider' => 'mailtrap'];
     }
 
     /**

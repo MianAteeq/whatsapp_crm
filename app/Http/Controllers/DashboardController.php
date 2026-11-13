@@ -573,75 +573,84 @@ class DashboardController extends Controller
         $id = 1;
 
         // 1. Unread conversations
-        try {
-            $unreadConversations = \App\Models\Conversation::with('contact')
-                ->where('tenant_id', $tenantId)
-                ->where('unread_count', '>', 0)
-                ->latest('updated_at')
-                ->take(5)
-                ->get();
+        if (auth()->user()->hasPermission('inbox.view')) {
+            try {
+                $unreadConversations = \App\Models\Conversation::with('contact')
+                    ->where('tenant_id', $tenantId)
+                    ->where('unread_count', '>', 0)
+                    ->latest('updated_at')
+                    ->take(5)
+                    ->get();
 
-            foreach ($unreadConversations as $conv) {
-                if ($conv->contact) {
-                    $notifications[] = [
-                        'id' => $id++,
-                        'title' => 'New Message Inbound',
-                        'desc' => "Customer {$conv->contact->name} ({$conv->contact->phone}) sent a new message.",
-                        'time' => $conv->updated_at ? $conv->updated_at->diffForHumans() : 'Just now',
-                        'unread' => true,
-                        'category' => 'inbox',
-                        'action_path' => "/inbox?select={$conv->id}"
-                    ];
+                foreach ($unreadConversations as $conv) {
+                    if ($conv->contact) {
+                        $notifications[] = [
+                            'id' => $id++,
+                            'title' => 'New Message Inbound',
+                            'desc' => "Customer {$conv->contact->name} ({$conv->contact->phone}) sent a new message.",
+                            'time' => $conv->updated_at ? $conv->updated_at->diffForHumans() : 'Just now',
+                            'unread' => true,
+                            'category' => 'inbox',
+                            'action_path' => "/inbox?select={$conv->id}"
+                        ];
+                    }
                 }
+            } catch (\Exception $e) {
+                // Ignore error
             }
-        } catch (\Exception $e) {
-            // Ignore error
+
         }
 
         // 2. Campaigns
-        try {
-            $campaigns = \App\Models\Campaign::where('tenant_id', $tenantId)
-                ->latest()
-                ->take(3)
-                ->get();
+        if (auth()->user()->hasPermission('campaigns.view')) {
+            try {
+                $campaigns = \App\Models\Campaign::where('tenant_id', $tenantId)
+                    ->latest()
+                    ->take(3)
+                    ->get();
 
-            foreach ($campaigns as $camp) {
-                $statusStr = ucfirst(strtolower($camp->status));
-                $isComplete = strtolower($camp->status) === 'completed';
-                $notifications[] = [
-                    'id' => $id++,
-                    'title' => "Campaign {$statusStr}",
-                    'desc' => "Campaign \"{$camp->name}\" status is now {$camp->status}.",
-                    'time' => $camp->updated_at ? $camp->updated_at->diffForHumans() : 'Recently',
-                    'unread' => !$isComplete,
-                    'category' => 'campaign',
-                    'action_path' => "/campaigns/{$camp->id}"
-                ];
+                foreach ($campaigns as $camp) {
+                    $statusStr = ucfirst(strtolower($camp->status));
+                    $isComplete = strtolower($camp->status) === 'completed';
+                    $notifications[] = [
+                        'id' => $id++,
+                        'title' => "Campaign {$statusStr}",
+                        'desc' => "Campaign \"{$camp->name}\" status is now {$camp->status}.",
+                        'time' => $camp->updated_at ? $camp->updated_at->diffForHumans() : 'Recently',
+                        'unread' => !$isComplete,
+                        'category' => 'campaign',
+                        'action_path' => "/campaigns/{$camp->id}"
+                    ];
+                }
+            } catch (\Exception $e) {
+                // Ignore error
             }
-        } catch (\Exception $e) {
-            // Ignore error
+
         }
 
         // 3. Templates
-        try {
-            $templates = \App\Models\WhatsappTemplate::where('tenant_id', $tenantId)
-                ->latest()
-                ->take(2)
-                ->get();
+        if (auth()->user()->hasPermission('templates.view')) {
+            try {
+                $templates = \App\Models\WhatsappTemplate::where('tenant_id', $tenantId)
+                    ->latest()
+                    ->take(2)
+                    ->get();
 
-            foreach ($templates as $temp) {
-                $notifications[] = [
-                    'id' => $id++,
-                    'title' => 'Template Synced',
-                    'desc' => "WhatsApp template \"{$temp->template_name}\" was successfully synced.",
-                    'time' => $temp->created_at ? $temp->created_at->diffForHumans() : 'Recently',
-                    'unread' => false,
-                    'category' => 'whatsapp',
-                    'action_path' => "/templates"
-                ];
+                foreach ($templates as $temp) {
+                    $notifications[] = [
+                        'id' => $id++,
+                        'title' => 'Template Synced',
+                        'desc' => "WhatsApp template \"{$temp->template_name}\" was successfully synced.",
+                        'time' => $temp->created_at ? $temp->created_at->diffForHumans() : 'Recently',
+                        'unread' => false,
+                        'category' => 'whatsapp',
+                        'action_path' => "/templates"
+                    ];
+                }
+            } catch (\Exception $e) {
+                // Ignore error
             }
-        } catch (\Exception $e) {
-            // Ignore error
+
         }
 
         // 4. Default System notifications if none

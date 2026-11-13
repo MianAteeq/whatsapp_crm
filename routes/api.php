@@ -73,7 +73,10 @@ Route::post('/webhook/mailtrap', [\App\Http\Controllers\Api\MailtrapWebhookContr
 // Protected Routes (Require Authentication)
 // ============================================
 
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'access'])->group(function () {
+    Route::get('user/me', fn (\Illuminate\Http\Request $request) => response()->json(['user' => $request->user()->load(['tenant', 'accessRole'])]));
+    Route::get('access/roles', [\App\Http\Controllers\Api\RoleController::class, 'options']);
+    Route::apiResource('team/users', \App\Http\Controllers\Api\UserAccessController::class)->except('show');
     /**
      * User logout route
      */
@@ -327,9 +330,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('tenants/{id}', [\App\Http\Controllers\Api\SuperAdminController::class, 'updateTenant']);
         Route::delete('tenants/{id}', [\App\Http\Controllers\Api\SuperAdminController::class, 'deleteTenant']);
         
-        Route::get('users', [\App\Http\Controllers\Api\SuperAdminController::class, 'usersIndex']);
-        Route::put('users/{id}', [\App\Http\Controllers\Api\SuperAdminController::class, 'updateUser']);
-        Route::delete('users/{id}', [\App\Http\Controllers\Api\SuperAdminController::class, 'deleteUser']);
+        Route::get('access/workspaces', [\App\Http\Controllers\Api\UserAccessController::class, 'workspaces']);
+        Route::apiResource('users', \App\Http\Controllers\Api\UserAccessController::class)->except('show');
+        Route::apiResource('roles', \App\Http\Controllers\Api\RoleController::class)->except('show');
         
         Route::get('plans', [\App\Http\Controllers\Api\SuperAdminController::class, 'plansIndex']);
         Route::post('plans', [\App\Http\Controllers\Api\SuperAdminController::class, 'createPlan']);

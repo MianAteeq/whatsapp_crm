@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\AccessControl;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -16,7 +17,28 @@ use Laravel\Sanctum\HasApiTokens;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-  use HasApiTokens, HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable;
+
+    protected $appends = ['permissions'];
+
+    public function accessRole()
+    {
+        return $this->belongsTo(Role::class, 'role', 'key');
+    }
+
+    public function getPermissionsAttribute(): array
+    {
+        if ($this->role === 'superadmin') {
+            return AccessControl::keys();
+        }
+
+        return $this->accessRole?->permissions ?? [];
+    }
+
+    public function hasPermission(string $permission): bool
+    {
+        return $this->status !== 'blocked' && ($this->role === 'superadmin' || in_array($permission, $this->permissions, true));
+    }
 
     /**
      * Get the attributes that should be cast.
@@ -30,8 +52,9 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+
     public function tenant()
-{
-    return $this->belongsTo(Tenant::class);
-}
+    {
+        return $this->belongsTo(Tenant::class);
+    }
 }

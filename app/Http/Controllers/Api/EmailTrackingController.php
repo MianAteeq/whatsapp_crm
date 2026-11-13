@@ -83,6 +83,12 @@ class EmailTrackingController extends Controller
      */
     public function webhook(Request $request, string $provider)
     {
+        // Keep existing Mailtrap webhook URLs on the same signed, batched-event
+        // processing path as /api/webhooks/mailtrap.
+        if (strtolower($provider) === 'mailtrap') {
+            return app(MailtrapWebhookController::class)->handle($request);
+        }
+
         Log::info("[EmailWebhook] Received event from {$provider}", ['payload' => $request->all()]);
 
         $providerInstance = EmailProviderFactory::make(null);

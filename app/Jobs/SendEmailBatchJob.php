@@ -134,8 +134,14 @@ class SendEmailBatchJob implements ShouldQueue
                     'to_email' => $recipient->email,
                     'to_name' => $recipient->contact?->name ?? '',
                     'subject' => $subject,
+                    'category' => $campaign->name,
                     'html_body' => $htmlBody,
                     'text_body' => $textBody,
+                    'metadata' => [
+                        'tenant_id' => (string) $campaign->tenant_id,
+                        'campaign_id' => (string) $campaign->id,
+                        'recipient_id' => (string) $recipient->id,
+                    ],
                     'headers' => [
                         'X-Campaign-Id' => (string)$campaign->id,
                         'X-Recipient-Id' => (string)$recipient->id,
@@ -144,13 +150,12 @@ class SendEmailBatchJob implements ShouldQueue
                 ];
 
                 $response = $provider->send($sendPayload);
-                $providerName = $setting?->provider ?: 'mailtrap';
+                $providerName = 'mailtrap';
 
                 if ($response['success']) {
                     $msgId = $response['message_id'] ?? null;
 
                     $recipient->update([
-                        'status' => EmailCampaignRecipient::STATUS_SENT,
                         'sent_at' => now(),
                         'provider' => $providerName,
                         'provider_message_id' => $msgId,
@@ -158,6 +163,12 @@ class SendEmailBatchJob implements ShouldQueue
                         'error_message' => null,
                         'last_event_at' => now(),
                     ]);
+
+                    // A fast webhook can arrive before the send request returns.
+                    // Never overwrite a delivery/bounce status with "sent".
+                    EmailCampaignRecipient::whereKey($recipient->id)
+                        ->where('status', EmailCampaignRecipient::STATUS_SENDING)
+                        ->update(['status' => EmailCampaignRecipient::STATUS_SENT]);
 
                     // Record initial sent event in email_delivery_events
                     \App\Models\EmailDeliveryEvent::create([

@@ -4,7 +4,6 @@ namespace App\Services\Email;
 
 use App\Models\EmailDomainAuditLog;
 use App\Models\EmailSendingDomain;
-use App\Models\EmailSetting;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -16,23 +15,16 @@ class MailtrapDomainService
     protected string $apiBase = 'https://mailtrap.io/api';
 
     /**
-     * Resolve the Mailtrap API token for the tenant, falling back to system config.
+     * All customer domains use the platform's billed Mailtrap account.
      */
     public function resolveApiToken(?int $tenantId = null): string
     {
-        $globalToken = config('services.mailtrap.api_token') ?: env('MAILTRAP_API_TOKEN');
+        $globalToken = config('services.mailtrap.api_token');
         if (!empty($globalToken)) {
             return trim($globalToken);
         }
 
-        if ($tenantId) {
-            $setting = EmailSetting::where('tenant_id', $tenantId)->first();
-            if ($setting && !empty($setting->mailtrap_api_token)) {
-                return trim($setting->mailtrap_api_token);
-            }
-        }
-
-        throw new RuntimeException('Mailtrap API Token is not configured. Please add MAILTRAP_API_TOKEN in your .env file.');
+        throw new RuntimeException('The platform email service is not configured. Please contact your administrator.');
     }
 
     /**

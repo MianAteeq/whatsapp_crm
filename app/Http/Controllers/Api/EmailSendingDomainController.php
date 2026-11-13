@@ -173,15 +173,7 @@ class EmailSendingDomainController extends Controller
     public function adminIndex(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (($user->role ?? '') !== 'admin' && ($user->is_admin ?? false) !== true) {
-            // Check if user is tenant owner / admin
-            if (($user->role ?? '') !== 'owner') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized: Administrator access required.',
-                ], 403);
-            }
-        }
+        abort_unless($user?->role === 'superadmin', 403, 'Super Admin access is required.');
 
         $query = EmailSendingDomain::with('tenant:id,name');
 

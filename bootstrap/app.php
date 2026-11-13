@@ -15,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'superadmin' => \App\Http\Middleware\AdminMiddleware::class,
+            'access' => \App\Http\Middleware\EnsureAccess::class,
         ]);
         $middleware->appendToGroup('api', [
             \App\Http\Middleware\CheckUserStatus::class,

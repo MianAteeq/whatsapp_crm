@@ -55,6 +55,7 @@ class EmailTemplateController extends Controller
             'category' => 'required|string|max:50',
             'html_body' => 'required|string',
             'text_body' => 'nullable|string',
+            ...$this->editorRules(),
         ]);
 
         $template = EmailTemplate::create([
@@ -64,6 +65,7 @@ class EmailTemplateController extends Controller
             'category' => $validated['category'],
             'html_body' => $validated['html_body'],
             'text_body' => $validated['text_body'] ?? strip_tags($validated['html_body']),
+            'editor_data' => $validated['editor_data'] ?? null,
         ]);
 
         return response()->json([
@@ -101,6 +103,7 @@ class EmailTemplateController extends Controller
             'category' => 'sometimes|required|string|max:50',
             'html_body' => 'sometimes|required|string',
             'text_body' => 'nullable|string',
+            ...$this->editorRules(),
         ]);
 
         $template->update($validated);
@@ -110,6 +113,29 @@ class EmailTemplateController extends Controller
             'message' => 'Email template updated successfully.',
             'data' => $template,
         ]);
+    }
+
+    private function editorRules(): array
+    {
+        $rules = [
+            'editor_data' => 'nullable|array:frame_id,body_html,brand',
+            'editor_data.frame_id' => 'required_with:editor_data|string|max:80',
+            'editor_data.body_html' => 'required_with:editor_data|string',
+            'editor_data.brand' => 'required_with:editor_data|array:company_name,company_full_name,logo_url,website_url,contact_label,phone,email,department,address,navigation,socials',
+            'editor_data.brand.logo_url' => 'nullable|url:http,https|max:2048',
+            'editor_data.brand.website_url' => 'nullable|url:http,https|max:2048',
+            'editor_data.brand.email' => 'nullable|email|max:191',
+            'editor_data.brand.navigation' => 'sometimes|array|max:4',
+            'editor_data.brand.navigation.*.label' => 'nullable|string|max:40',
+            'editor_data.brand.navigation.*.url' => 'nullable|url:http,https|max:2048',
+            'editor_data.brand.socials' => 'sometimes|array:linkedin,facebook,instagram,x',
+            'editor_data.brand.socials.*' => 'nullable|url:http,https|max:2048',
+        ];
+        foreach (['company_name', 'company_full_name', 'contact_label', 'phone', 'department', 'address'] as $field) {
+            $rules['editor_data.brand.'.$field] = 'nullable|string|max:1000';
+        }
+
+        return $rules;
     }
 
     /**

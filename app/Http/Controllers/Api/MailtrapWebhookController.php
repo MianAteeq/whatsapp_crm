@@ -4,10 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\ProcessMailtrapWebhookJob;
-use App\Models\EmailSetting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use JsonException;
 
 class MailtrapWebhookController extends Controller
 {
@@ -28,15 +28,7 @@ class MailtrapWebhookController extends Controller
         ]);
 
         // 1. Resolve webhook signing secret
-        $secret = config('services.mailtrap.webhook_secret') ?: env('MAILTRAP_WEBHOOK_SECRET');
-        if (empty($secret)) {
-            $settingWithSecret = EmailSetting::whereNotNull('mailtrap_webhook_secret')
-                ->where('mailtrap_webhook_secret', '!=', '')
-                ->first();
-            if ($settingWithSecret) {
-                $secret = $settingWithSecret->mailtrap_webhook_secret;
-            }
-        }
+        $secret = config('services.mailtrap.webhook_secret');
 
         // 2. Cryptographic signature verification
         if (!empty($secret)) {
@@ -51,10 +43,7 @@ class MailtrapWebhookController extends Controller
             $computedSignature = hash_hmac('sha256', $rawContent, $secret);
 
             if (!hash_equals(strtolower($computedSignature), strtolower(trim($signature)))) {
-                Log::warning('[MailtrapWebhookController] Rejected webhook: invalid signature mismatch.', [
-                    'computed' => $computedSignature,
-                    'provided' => $signature,
-                ]);
+                Log::warning('[MailtrapWebhookController] Rejected webhook: invalid signature mismatch.');
 
                 return response()->json([
                     'success' => false,
@@ -66,18 +55,15 @@ class MailtrapWebhookController extends Controller
         }
 
         // 3. Extract and normalize events list
-        $payload = $request->json()->all();
-        if (empty($payload)) {
-            $payload = json_decode($rawContent, true) ?: [];
+        try {
+            $events = $this->decodeEvents($rawContent);
+        } catch (JsonException) {
+            return response()->json(['success' => false, 'error' => 'Invalid JSON or JSON Lines webhook payload.'], 400);
         }
-
-        $events = [];
-        if (!empty($payload['events']) && is_array($payload['events'])) {
-            $events = $payload['events'];
-        } elseif (array_is_list($payload) && !empty($payload)) {
-            $events = $payload;
-        } elseif (!empty($payload['event'])) {
-            $events = [$payload];
+        foreach ($events as $event) {
+            if (!is_array($event) || empty($event['event']) || !is_string($event['event'])) {
+                return response()->json(['success' => false, 'error' => 'Each webhook event must contain an event name.'], 422);
+            }
         }
 
         if (empty($events)) {
@@ -89,7 +75,7 @@ class MailtrapWebhookController extends Controller
         }
 
         // 4. Asynchronous processing via Queue Job
-        // If queue connection is sync or database, this executes cleanly
+        // The database queue requires a running queue worker to process events.
         ProcessMailtrapWebhookJob::dispatch($events);
 
         return response()->json([
@@ -97,5 +83,35 @@ class MailtrapWebhookController extends Controller
             'message' => 'Webhook received and queued for processing.',
             'events_received' => count($events),
         ], 200);
+    }
+
+    private function decodeEvents(string $rawContent): array
+    {
+        try {
+            $payloads = [json_decode($rawContent, true, flags: JSON_THROW_ON_ERROR)];
+        } catch (JsonException) {
+            // Mailtrap also supports newline-delimited JSON. Verify the raw
+            // signature above before decoding either format.
+            $payloads = array_map(
+                fn ($line) => json_decode($line, true, flags: JSON_THROW_ON_ERROR),
+                preg_split('/\R/', trim($rawContent), flags: PREG_SPLIT_NO_EMPTY)
+            );
+        }
+
+        $events = [];
+        foreach ($payloads as $payload) {
+            if (!is_array($payload)) {
+                throw new JsonException('Webhook payload must be an object or array.');
+            }
+            if (isset($payload['events']) && is_array($payload['events'])) {
+                array_push($events, ...array_values($payload['events']));
+            } elseif (array_is_list($payload)) {
+                array_push($events, ...$payload);
+            } elseif (isset($payload['event'])) {
+                $events[] = $payload;
+            }
+        }
+
+        return $events;
     }
 }

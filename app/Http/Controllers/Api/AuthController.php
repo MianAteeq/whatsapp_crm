@@ -25,6 +25,8 @@ class AuthController extends Controller
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->password),
+            'role' => 'admin',
+            'status' => 'active',
         ]);
 
         // 2. Create Tenant

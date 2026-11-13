@@ -5,12 +5,13 @@ namespace App\Services\Email\Providers;
 use App\Services\Email\Contracts\EmailProviderInterface;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use Throwable;
 
 class MailtrapEmailProvider implements EmailProviderInterface
 {
-    protected string $apiBaseUrl = 'https://send.api.mailtrap.io/api';
+    // This provider serves marketing campaigns and their test emails. Mailtrap
+    // webhooks are scoped to a sending stream, so these must use Bulk.
+    protected string $apiBaseUrl = 'https://bulk.api.mailtrap.io/api';
 
     public function __construct(
         protected ?string $apiToken = null,
@@ -18,8 +19,8 @@ class MailtrapEmailProvider implements EmailProviderInterface
         protected ?string $sendingDomain = null
     ) {
         // Fall back to environment/services configuration if not passed explicitly
-        $this->apiToken = $this->apiToken ?: (config('services.mailtrap.api_token') ?: env('MAILTRAP_API_TOKEN'));
-        $this->webhookSecret = $this->webhookSecret ?: (config('services.mailtrap.webhook_secret') ?: env('MAILTRAP_WEBHOOK_SECRET'));
+        $this->apiToken = $this->apiToken ?: config('services.mailtrap.api_token');
+        $this->webhookSecret = $this->webhookSecret ?: config('services.mailtrap.webhook_secret');
         $this->sendingDomain = $this->sendingDomain ?: (config('services.mailtrap.domain') ?: env('MAILTRAP_DOMAIN'));
 
         // Sanitize token (trim whitespace, quotes, and optional 'Bearer ' prefix)
@@ -40,7 +41,7 @@ class MailtrapEmailProvider implements EmailProviderInterface
             return [
                 'success' => false,
                 'message_id' => null,
-                'error' => 'Mailtrap API Token is not configured. Please add your Mailtrap API token in Email Settings or .env.',
+                'error' => 'The platform email service is not configured. Please contact your administrator.',
             ];
         }
 
@@ -72,6 +73,10 @@ class MailtrapEmailProvider implements EmailProviderInterface
                 ],
                 'subject' => $message['subject'] ?? '(No Subject)',
             ];
+
+            if (!empty($message['category'])) {
+                $payload['category'] = mb_substr((string) $message['category'], 0, 255);
+            }
 
             if (!empty($message['html_body'])) {
                 $payload['html'] = $message['html_body'];
@@ -140,9 +145,10 @@ class MailtrapEmailProvider implements EmailProviderInterface
                     $messageId = $data['message_ids'][0];
                 }
 
-                // If no message_id returned, generate a fallback tracing ID
+                // An invented message ID can never match a delivery webhook.
+                // Keep it null and rely on campaign metadata for correlation.
                 if (!$messageId) {
-                    $messageId = 'mt_' . Str::uuid()->toString();
+                    Log::warning('[MailtrapEmailProvider] Mailtrap accepted an email without returning a message ID.');
                 }
 
                 return [
@@ -248,7 +254,7 @@ class MailtrapEmailProvider implements EmailProviderInterface
      */
     public function handleWebhook(array $payload, array $headers = []): ?array
     {
-        $event = $payload['event'] ?? 'unknown';
+        $event = str_replace([' ', '-'], '_', strtolower(trim((string) ($payload['event'] ?? 'unknown'))));
 
         $mappedEvent = match (strtolower((string)$event)) {
             'delivery', 'delivered' => 'delivered',
@@ -257,7 +263,7 @@ class MailtrapEmailProvider implements EmailProviderInterface
             'reject', 'dropped' => 'failed',
             'spam_complaint', 'spam', 'complaint' => 'complained',
             'unsubscribe', 'unsubscribed' => 'unsubscribed',
-            'deferral', 'deferred' => 'deferred',
+            'deferral', 'deferred', 'suspension' => 'deferred',
             'open', 'opened' => 'opened',
             'click', 'clicked' => 'clicked',
             default => strtolower((string)$event),

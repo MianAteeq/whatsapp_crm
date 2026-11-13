@@ -12,6 +12,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Rule;
 
 class EmailCampaignController extends Controller
 {
@@ -92,7 +93,7 @@ class EmailCampaignController extends Controller
             'from_email' => 'required|email|max:191',
             'reply_to' => 'nullable|email|max:191',
             'sending_domain_id' => 'nullable|integer',
-            'template_id' => 'nullable|exists:email_templates,id',
+            'template_id' => ['nullable', Rule::exists('email_templates', 'id')->where('tenant_id', $tenantId)],
             'html_body' => 'required|string',
             'text_body' => 'nullable|string',
             'audience_filter' => 'nullable|array',
@@ -197,7 +198,7 @@ class EmailCampaignController extends Controller
             'from_email' => 'sometimes|required|email|max:191',
             'reply_to' => 'nullable|email|max:191',
             'sending_domain_id' => 'nullable|integer',
-            'template_id' => 'nullable|exists:email_templates,id',
+            'template_id' => ['nullable', Rule::exists('email_templates', 'id')->where('tenant_id', $tenantId)],
             'html_body' => 'sometimes|required|string',
             'text_body' => 'nullable|string',
             'audience_filter' => 'nullable|array',
