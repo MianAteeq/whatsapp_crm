@@ -13,6 +13,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Facades\Excel;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ContactController extends Controller
 {
@@ -192,6 +194,46 @@ class ContactController extends Controller
             'prev_page_url' => $paginated->previousPageUrl(),
             'to' => $paginated->lastItem(),
             'total' => $paginated->total(),
+        ]);
+    }
+
+    public function import(Request $request)
+    {
+        $user = $this->currentUser();
+        $mappings = $request->input('mappings', []);
+        if (is_string($mappings)) {
+            try {
+                $mappings = json_decode($mappings, true, flags: JSON_THROW_ON_ERROR);
+            } catch (\JsonException) {
+                throw ValidationException::withMessages(['mappings' => 'Column mappings must contain valid JSON.']);
+            }
+        }
+        $request->merge(['mappings' => $mappings]);
+        $validated = $request->validate([
+            'file' => 'required|file|mimes:csv,txt,xlsx,xls|max:51200',
+            'mappings' => 'nullable|array:name,phone,email,company,job_title,address,website,notes,tags',
+            'mappings.*' => 'required|string|max:255',
+            'category_id' => ['nullable', 'integer', Rule::exists('categories', 'id')->where('tenant_id', $user->tenant_id)],
+        ]);
+
+        $limit = $user->tenant?->getLimits()['contacts'] ?? 'Unlimited';
+        $remaining = strtolower((string) $limit) === 'unlimited' ? null
+            : max(0, (int) str_replace([',', ' '], '', (string) $limit) - Contact::where('tenant_id', $user->tenant_id)->count());
+        if ($remaining === 0) {
+            throw ValidationException::withMessages(['file' => 'Your contact limit has been reached. Upgrade your plan before importing more contacts.']);
+        }
+
+        $import = new ContactsImport($validated['mappings'] ?? [], $remaining, isset($validated['category_id']) ? [(int) $validated['category_id']] : []);
+        Excel::import($import, $request->file('file'));
+
+        return response()->json([
+            'success' => true,
+            'message' => "Imported {$import->successCount} contacts. Skipped {$import->duplicateCount} duplicates, {$import->invalidCount} invalid rows, and {$import->limitSkippedCount} over the plan limit.",
+            'success_count' => $import->successCount,
+            'skipped_count' => $import->duplicateCount + $import->invalidCount + $import->limitSkippedCount,
+            'duplicate_count' => $import->duplicateCount,
+            'invalid_count' => $import->invalidCount,
+            'limit_skipped_count' => $import->limitSkippedCount,
         ]);
     }
 

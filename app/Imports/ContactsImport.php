@@ -9,12 +9,18 @@ use Illuminate\Support\Facades\Auth;
 use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
 use Maatwebsite\Excel\Concerns\WithChunkReading;
+use App\Services\Scraper\PhoneNormalizationService;
+use Illuminate\Support\Facades\Validator;
 
 class ContactsImport implements ToCollection, WithHeadingRow, WithChunkReading
 {
     protected $mappings;
+    public int $successCount = 0;
+    public int $duplicateCount = 0;
+    public int $invalidCount = 0;
+    public int $limitSkippedCount = 0;
 
-    public function __construct(array $mappings = [])
+    public function __construct(array $mappings = [], private ?int $remaining = null, private array $categoryIds = [])
     {
         $this->mappings = $mappings;
     }
@@ -46,80 +52,84 @@ class ContactsImport implements ToCollection, WithHeadingRow, WithChunkReading
         if (!$user) return;
         $tenantId = $user->tenant_id;
 
-        // Extract all non-empty phone numbers in this chunk
+        $normalizer = app(PhoneNormalizationService::class);
+        // Look up both raw and normalized phones so differently formatted duplicates are skipped.
         $phones = $rows->map(fn($r) => $this->getRowValue($r, 'phone'))
             ->filter()
             ->unique()
             ->toArray();
 
-        if (empty($phones)) {
-            return;
-        }
+        $normalizedPhones = array_values(array_filter(array_map(fn ($phone) => $normalizer->normalizeE164($phone), $phones)));
 
         // Fetch already existing phone numbers for this tenant in one query
         $existingPhones = Contact::where('tenant_id', $tenantId)
-            ->whereIn('phone', $phones)
-            ->pluck('phone')
-            ->map(fn($p) => trim((string)$p))
-            ->toArray();
-
-        // Extract all unique tag names in this chunk
-        $allTagNames = [];
-        foreach ($rows as $row) {
-            $tagsValue = $this->getRowValue($row, 'tags');
-            if (!empty($tagsValue)) {
-                foreach (explode(',', $tagsValue) as $t) {
-                    $cleaned = trim((string)$t);
-                    if ($cleaned !== '') {
-                        $allTagNames[] = $cleaned;
-                    }
-                }
-            }
+            ->where(fn ($query) => $query->whereIn('phone', $phones)->orWhereIn('phone_normalized', $normalizedPhones)->orWhereNull('phone_normalized'))
+            ->get(['phone', 'phone_normalized']);
+        $seen = [];
+        foreach ($existingPhones as $existing) {
+            $seen['raw:'.trim($existing->phone)] = true;
+            $normalized = $existing->phone_normalized ?: $normalizer->normalizeE164($existing->phone);
+            if ($normalized) $seen['normalized:'.$normalized] = true;
         }
-        $allTagNames = array_unique($allTagNames);
 
-        // Pre-create/fetch all tags in this chunk to avoid queries in the loop
+        // Reuse tags within this chunk; only create tags for imported valid rows.
         $tagCache = [];
-        foreach ($allTagNames as $tagName) {
-            $tag = Tag::firstOrCreate(['name' => $tagName]);
-            $tagCache[$tagName] = $tag->id;
-        }
 
         // Perform insert within a single database transaction
-        \Illuminate\Support\Facades\DB::transaction(function () use ($rows, $tenantId, $existingPhones, $tagCache) {
+        \Illuminate\Support\Facades\DB::transaction(function () use ($rows, $tenantId, $normalizer, &$seen, &$tagCache) {
             foreach ($rows as $row) {
                 $name = $this->getRowValue($row, 'name');
                 $phone = $this->getRowValue($row, 'phone');
+                $normalizedPhone = $normalizer->normalizeE164($phone);
+                $email = strtolower($this->getRowValue($row, 'email')) ?: null;
+                $values = [];
+                foreach (['company', 'job_title', 'address', 'website', 'notes'] as $field) {
+                    $values[$field] = $this->getRowValue($row, $field) ?: null;
+                }
+                $tagNames = array_values(array_filter(array_map('trim', explode(',', $this->getRowValue($row, 'tags')))));
 
-                if ($name === '' || $phone === '') {
+                if (!$normalizedPhone || Validator::make([...$values, 'name' => $name, 'phone' => $phone, 'email' => $email, 'tags' => $tagNames], [
+                    'name' => 'required|string|max:255', 'phone' => 'required|string|max:50', 'email' => 'nullable|email|max:191',
+                    'company' => 'nullable|string|max:255', 'job_title' => 'nullable|string|max:255', 'tags.*' => 'string|max:255',
+                ])->fails()) {
+                    $this->invalidCount++;
                     continue;
                 }
 
-                if (in_array($phone, $existingPhones)) {
+                if (isset($seen['raw:'.$phone]) || isset($seen['normalized:'.$normalizedPhone])) {
+                    $this->duplicateCount++;
+                    continue;
+                }
+                if ($this->remaining !== null && $this->successCount >= $this->remaining) {
+                    $this->limitSkippedCount++;
                     continue;
                 }
 
+                $parts = preg_split('/\s+/', $name, 2);
                 $contact = Contact::create([
                     'tenant_id' => $tenantId,
                     'name'      => $name,
+                    'first_name' => $parts[0] ?? '',
+                    'last_name' => $parts[1] ?? '',
                     'phone'     => $phone,
-                    'email'     => $this->getRowValue($row, 'email') ?: null,
-                    'company'   => $this->getRowValue($row, 'company') ?: null,
-                    'job_title' => $this->getRowValue($row, 'job_title') ?: null,
-                    'address'   => $this->getRowValue($row, 'address') ?: null,
-                    'website'   => $this->getRowValue($row, 'website') ?: null,
-                    'notes'     => $this->getRowValue($row, 'notes') ?: null,
+                    'phone_normalized' => $normalizedPhone,
+                    'phone_original' => $phone,
+                    'email' => $email,
+                    'email_normalized' => $email,
+                    ...$values,
                     'status'    => 'active',
+                    'source' => 'CSV Import',
                 ]);
+                $seen['raw:'.$phone] = true;
+                $seen['normalized:'.$normalizedPhone] = true;
+                $this->successCount++;
+                if ($this->categoryIds) $contact->categories()->syncWithoutDetaching($this->categoryIds);
 
-                $tagsValue = $this->getRowValue($row, 'tags');
-                if (!empty($tagsValue)) {
+                if ($tagNames) {
                     $rowTagIds = [];
-                    foreach (explode(',', $tagsValue) as $t) {
-                        $tagName = trim((string)$t);
-                        if (isset($tagCache[$tagName])) {
-                            $rowTagIds[] = $tagCache[$tagName];
-                        }
+                    foreach ($tagNames as $tagName) {
+                        $tagCache[$tagName] ??= Tag::firstOrCreate(['name' => $tagName])->id;
+                        $rowTagIds[] = $tagCache[$tagName];
                     }
                     if (!empty($rowTagIds)) {
                         $contact->tags()->sync($rowTagIds);

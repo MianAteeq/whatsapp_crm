@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\EmailCampaign;
 use App\Models\EmailCampaignRecipient;
 use App\Models\EmailSetting;
+use App\Models\Category;
+use App\Models\Contact;
+use App\Support\EmailAudienceRules;
 use App\Services\Email\EmailAudienceFilterService;
 use App\Services\Email\EmailCampaignService;
 use Carbon\Carbon;
@@ -97,6 +100,7 @@ class EmailCampaignController extends Controller
             'html_body' => 'required|string',
             'text_body' => 'nullable|string',
             'audience_filter' => 'nullable|array',
+            ...EmailAudienceRules::forTenant($tenantId, 'audience_filter.'),
             'scheduled_at' => 'nullable|date',
             'launch_now' => 'nullable|boolean',
         ]);
@@ -202,6 +206,7 @@ class EmailCampaignController extends Controller
             'html_body' => 'sometimes|required|string',
             'text_body' => 'nullable|string',
             'audience_filter' => 'nullable|array',
+            ...EmailAudienceRules::forTenant($tenantId, 'audience_filter.'),
             'scheduled_at' => 'nullable|date',
         ]);
 
@@ -221,6 +226,13 @@ class EmailCampaignController extends Controller
 
             $validated['sending_domain_id'] = $domainCheck['domain']?->id;
             $validated['sending_domain'] = $domainCheck['domain']?->domain;
+        }
+
+        if (array_key_exists('audience_filter', $validated)) {
+            $evaluation = EmailAudienceFilterService::evaluateAudience($tenantId, $validated['audience_filter'] ?? []);
+            $validated['total_recipients'] = $evaluation['total_evaluated'];
+            $validated['eligible_count'] = $evaluation['eligible_count'];
+            $validated['excluded_count'] = $evaluation['excluded_count'];
         }
 
         $campaign->update($validated);
@@ -271,7 +283,7 @@ class EmailCampaignController extends Controller
     public function estimateAudience(Request $request): JsonResponse
     {
         $tenantId = (int)$request->user()->tenant_id;
-        $filters = $request->all();
+        $filters = $request->validate(EmailAudienceRules::forTenant($tenantId));
 
         $result = EmailAudienceFilterService::evaluateAudience($tenantId, $filters);
 
@@ -279,6 +291,24 @@ class EmailCampaignController extends Controller
             'success' => true,
             'data' => $result,
         ]);
+    }
+
+    public function audienceOptions(Request $request): JsonResponse
+    {
+        $tenantId = (int) $request->user()->tenant_id;
+        $sources = Contact::where('tenant_id', $tenantId)->whereNotNull('source')
+            ->distinct()->orderBy('source')->pluck('source')
+            ->map(fn ($source) => trim($source))->filter()
+            ->reject(fn ($source) => in_array(strtolower($source), ['crm', 'crm manual', 'manual', 'manual entry', 'business scraper']))
+            ->unique()->map(fn ($source) => ['value' => $source, 'label' => $source])->values();
+
+        return response()->json(['success' => true, 'data' => [
+            'categories' => Category::where('tenant_id', $tenantId)->orderBy('name')->get(['id', 'name']),
+            'sources' => collect([
+                ['value' => 'Business Scraper', 'label' => 'Business Scraper'],
+                ['value' => 'CRM', 'label' => 'Manual CRM'],
+            ])->concat($sources)->values(),
+        ]]);
     }
 
     /**

@@ -14,16 +14,19 @@ class EmailAudienceFilterService
      */
     public static function buildBaseQuery(int $tenantId, array $filters = []): Builder
     {
-        $query = Contact::query()->where('tenant_id', $tenantId);
+        $query = Contact::query()->where('tenant_id', $tenantId)->orderBy('contacts.id');
+
+        // "All" must not inherit hidden segmentation fields from a previous selection.
+        if (($filters['audience_type'] ?? null) === 'all') {
+            return $query;
+        }
 
         $audienceType = $filters['audience_type'] ?? 'all';
 
         // 1. Explicitly selected contacts
         if ($audienceType === 'selected' || !empty($filters['contact_ids'])) {
             $ids = (array) ($filters['contact_ids'] ?? []);
-            if (!empty($ids)) {
-                $query->whereIn('id', $ids);
-            }
+            $query->whereIn('id', $ids);
         }
 
         // 2. Filter by Tags
@@ -46,22 +49,26 @@ class EmailAudienceFilterService
         if (!empty($filters['email_history'])) {
             $hist = strtolower(trim((string)$filters['email_history']));
             if ($hist === 'never_sent') {
-                $query->whereDoesntHave('emailRecipients', function ($q) {
-                    $q->whereIn('status', ['sent', 'delivered', 'opened', 'clicked', 'bounced', 'failed', 'complained', 'unsubscribed'])
-                      ->orWhereNotNull('sent_at');
+                $query->whereDoesntHave('emailRecipients', function ($q) use ($tenantId) {
+                    $q->where('tenant_id', $tenantId)->where(function ($history) {
+                        $history->whereIn('status', ['sent', 'delivered', 'opened', 'clicked', 'bounced', 'deferred', 'complained', 'unsubscribed'])
+                            ->orWhereNotNull('sent_at');
+                    });
                 });
             } elseif ($hist === 'previously_sent' || $hist === 'sent') {
-                $query->whereHas('emailRecipients', function ($q) {
-                    $q->whereIn('status', ['sent', 'delivered', 'opened', 'clicked'])
-                      ->orWhereNotNull('sent_at');
+                $query->whereHas('emailRecipients', function ($q) use ($tenantId) {
+                    $q->where('tenant_id', $tenantId)->where(function ($history) {
+                        $history->whereIn('status', ['sent', 'delivered', 'opened', 'clicked', 'bounced', 'deferred', 'complained', 'unsubscribed'])
+                            ->orWhereNotNull('sent_at');
+                    });
                 });
             } elseif ($hist === 'delivered') {
-                $query->whereHas('emailRecipients', function ($q) {
-                    $q->where('status', 'delivered')->orWhereNotNull('delivered_at');
+                $query->whereHas('emailRecipients', function ($q) use ($tenantId) {
+                    $q->where('tenant_id', $tenantId)->where(fn ($history) => $history->where('status', 'delivered')->orWhereNotNull('delivered_at'));
                 });
             } elseif ($hist === 'bounced') {
-                $query->whereHas('emailRecipients', function ($q) {
-                    $q->where('status', 'bounced')->orWhereNotNull('bounced_at');
+                $query->whereHas('emailRecipients', function ($q) use ($tenantId) {
+                    $q->where('tenant_id', $tenantId)->where(fn ($history) => $history->where('status', 'bounced')->orWhereNotNull('bounced_at'));
                 });
             }
         }
@@ -88,10 +95,12 @@ class EmailAudienceFilterService
             if (strtolower($source) === 'business scraper') {
                 $query->where(function ($q) {
                     $q->where('source', 'LIKE', '%scraper%')
-                      ->orWhereNotNull('google_place_id');
+                      ->orWhere(fn ($places) => $places->whereNotNull('google_place_id')->where('google_place_id', '!=', ''));
                 });
+            } elseif (in_array(strtolower($source), ['crm', 'crm manual', 'manual', 'manual entry'])) {
+                $query->whereIn(\Illuminate\Support\Facades\DB::raw('LOWER(TRIM(source))'), ['crm', 'crm manual', 'manual', 'manual entry']);
             } else {
-                $query->where('source', $source);
+                $query->whereRaw('TRIM(source) = ?', [$source]);
             }
         }
 
@@ -112,19 +121,22 @@ class EmailAudienceFilterService
         // 6. Location / City search
         if (!empty($filters['location'])) {
             $loc = trim($filters['location']);
-            $query->where(function ($q) use ($loc) {
+            $query->where(function ($q) use ($loc, $tenantId) {
                 $q->where('address', 'LIKE', "%{$loc}%")
-                  ->orWhere('source_details->city', 'LIKE', "%{$loc}%");
+                  ->orWhere('source_details->city', 'LIKE', "%{$loc}%")
+                  ->orWhereHas('business', fn ($business) => $business->where('tenant_id', $tenantId)
+                      ->where(fn ($location) => $location->where('city', 'LIKE', "%{$loc}%")->orWhere('address', 'LIKE', "%{$loc}%")));
             });
         }
 
         // 7. Industry search
         if (!empty($filters['industry'])) {
             $ind = trim($filters['industry']);
-            $query->where(function ($q) use ($ind) {
+            $query->where(function ($q) use ($ind, $tenantId) {
                 $q->where('job_title', 'LIKE', "%{$ind}%")
                   ->orWhere('company', 'LIKE', "%{$ind}%")
-                  ->orWhere('source_details->category', 'LIKE', "%{$ind}%");
+                  ->orWhere('source_details->category', 'LIKE', "%{$ind}%")
+                  ->orWhereHas('categories', fn ($categories) => $categories->where('tenant_id', $tenantId)->where('name', 'LIKE', "%{$ind}%"));
             });
         }
 
@@ -135,7 +147,7 @@ class EmailAudienceFilterService
 
         // 9. Website available filter
         if (!empty($filters['website_available'])) {
-            $query->whereNotNull('website')->where('website', '!=', '');
+            $query->whereNotNull('website')->whereRaw("TRIM(website) != ''");
         }
 
         return $query;
@@ -150,7 +162,8 @@ class EmailAudienceFilterService
         
         // Fetch contacts matching audience criteria
         $contacts = $baseQuery->get([
-            'id', 'name', 'company', 'email', 'status', 'lead_quality_grade', 'lead_quality_score', 'phone'
+            'id', 'name', 'company', 'email', 'status', 'lead_quality_grade', 'lead_quality_score', 'phone',
+            'first_name', 'last_name', 'website', 'job_title', 'address', 'source', 'source_details',
         ]);
 
         $suppressedEmails = EmailSuppression::where('tenant_id', $tenantId)

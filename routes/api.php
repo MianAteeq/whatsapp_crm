@@ -396,6 +396,7 @@ Route::middleware(['auth:sanctum', 'access'])->group(function () {
     // Email Campaigns
     Route::post('email/ai/generate', [EmailCampaignController::class, 'generateWithAi']);
     Route::post('email/campaigns/estimate-audience', [EmailCampaignController::class, 'estimateAudience']);
+    Route::get('email/campaigns/audience-options', [EmailCampaignController::class, 'audienceOptions']);
     Route::post('email/campaigns/send-test', [EmailCampaignController::class, 'sendTest']);
     Route::post('email/campaigns/{id}/launch', [EmailCampaignController::class, 'launch']);
     Route::post('email/campaigns/{id}/pause', [EmailCampaignController::class, 'pause']);
