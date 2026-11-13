@@ -105,4 +105,17 @@ class ContactImportTest extends TestCase
             ->assertUnprocessable()->assertJsonValidationErrors('category_id');
         $this->assertSame(0, Contact::count());
     }
+
+    public function test_large_import_counts_and_duplicates_are_preserved_across_chunks(): void
+    {
+        DB::table('plans')->where('key', 'free')->update(['limits' => json_encode(['contacts' => 'Unlimited'])]);
+        $csv = "name,phone,email\n";
+        for ($i = 0; $i < 1001; $i++) {
+            $csv .= 'Lead '.$i.',+1555'.str_pad((string) $i, 7, '0', STR_PAD_LEFT).',lead'.$i."@example.test\n";
+        }
+        $csv .= "Duplicate in next chunk,+15550000000,duplicate@example.test\n";
+        $this->post('/api/contacts/import', ['file' => UploadedFile::fake()->createWithContent('contacts.csv', $csv)], ['Accept' => 'application/json'])
+            ->assertOk()->assertJsonPath('success_count', 1001)->assertJsonPath('duplicate_count', 1);
+        $this->assertSame(1001, Contact::count());
+    }
 }
