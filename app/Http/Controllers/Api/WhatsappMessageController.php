@@ -493,14 +493,10 @@ class WhatsappMessageController extends Controller
         $cleanPhone = preg_replace('/[^0-9]/', '', (string)$request->phone);
         $wa_id = $response['contacts'][0]['wa_id'] ?? (!empty($cleanPhone) ? $cleanPhone : (string)$request->phone);
 
-        $contact = Contact::firstOrCreate(
-            [
-                'tenant_id' => auth()->user()->tenant_id,
-                'phone'     => $request->phone,
-            ],
-            [
-                'name' => $request->phone,
-            ]
+        $contact = app(\App\Services\WhatsAppContactResolver::class)->resolve(
+            (int) auth()->user()->tenant_id,
+            (string) $request->phone,
+            (string) $request->phone
         );
 
         /*
@@ -663,7 +659,8 @@ class WhatsappMessageController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => $incomingMessage,
+            'message' => 'Simulated incoming message created successfully',
+            'data' => $incomingMessage,
         ]);
     }
 }

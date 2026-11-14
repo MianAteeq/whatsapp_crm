@@ -133,10 +133,15 @@ class WhatsAppBillingService
                 $primaryFundingId
             );
 
-            // Determine payment method status (verifiable vs unverified)
-            $paymentMethodStatus = !empty($primaryFundingId)
-                ? 'configured'
-                : 'unverified';
+            // Standard Cloud API tokens cannot read primary_funding_id. Use
+            // successful paid messaging as operational evidence without
+            // claiming access to the customer's card details.
+            $paymentMethodStatus = $this->determinePaymentMethodStatus(
+                $profile,
+                $currency,
+                $primaryFundingId,
+                $billingStatus
+            );
 
             if ($profile) {
                 $updatePayload = [
@@ -215,6 +220,30 @@ class WhatsAppBillingService
         }
 
         return WhatsappBillingProfile::STATUS_UNKNOWN;
+    }
+
+    public function determinePaymentMethodStatus(
+        ?WhatsappBillingProfile $profile,
+        ?string $currency,
+        ?string $primaryFundingId,
+        string $billingStatus
+    ): string {
+        if (!empty($primaryFundingId)) {
+            return 'configured';
+        }
+
+        if ($billingStatus === WhatsappBillingProfile::STATUS_PAYMENT_ATTENTION_REQUIRED ||
+            $billingStatus === WhatsappBillingProfile::STATUS_RESTRICTED ||
+            ($profile && !empty($profile->last_error_code))) {
+            return 'attention_required';
+        }
+
+        if ($billingStatus === WhatsappBillingProfile::STATUS_OPERATIONAL &&
+            !empty($profile?->getAttributes()['last_successful_message_at'])) {
+            return 'active';
+        }
+
+        return !empty($currency) ? 'managed_in_meta' : 'not_configured';
     }
 
     /**
@@ -362,6 +391,10 @@ class WhatsAppBillingService
                 $updates['billing_status'] = WhatsappBillingProfile::STATUS_OPERATIONAL;
             }
 
+            if (!empty($profile->currency) && empty($profile->last_error_code)) {
+                $updates['payment_method_status'] = 'active';
+            }
+
             $profile->update($updates);
         }
     }
@@ -397,6 +430,18 @@ class WhatsAppBillingService
         array $extraMeta = []
     ): array {
         $setting = $setting ?? WhatsappSetting::where('tenant_id', $profile->tenant_id)->first();
+        $paymentMethodStatus = $profile->payment_method_status ?? 'unverified';
+
+        // Upgrade legacy "unverified" records in the response when the account
+        // already has concrete operational billing evidence.
+        if ($paymentMethodStatus === 'unverified') {
+            $paymentMethodStatus = $this->determinePaymentMethodStatus(
+                $profile,
+                $profile->currency,
+                null,
+                $profile->billing_status
+            );
+        }
 
         return [
             'id'                         => $profile->id,
@@ -410,8 +455,14 @@ class WhatsAppBillingService
             'billing_status'             => $profile->billing_status,
             'currency'                   => $profile->currency,
             'country'                    => $profile->country,
-            'payment_method_status'      => $profile->payment_method_status ?? 'unverified',
-            'payment_verification_note'  => 'Payment method status must be verified in Meta Business Manager.',
+            'payment_method_status'      => $paymentMethodStatus,
+            'payment_verification_note'  => match ($paymentMethodStatus) {
+                'configured' => 'Meta returned a configured funding source for this account.',
+                'active' => 'Active billing is confirmed by successful WhatsApp messaging. Card details remain managed by Meta.',
+                'managed_in_meta' => 'The payment method is managed securely in Meta. Card details are not exposed through the standard Graph API.',
+                'attention_required' => 'Meta reported a billing issue that requires attention.',
+                default => 'Complete payment setup in Meta Business Manager.',
+            },
             'last_error_code'            => $profile->last_error_code,
             'last_error_message'         => $profile->last_error_message,
             'last_error_details'         => $profile->last_error_details,

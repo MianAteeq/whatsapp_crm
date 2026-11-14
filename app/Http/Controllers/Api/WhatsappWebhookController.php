@@ -1013,22 +1013,11 @@ class WhatsappWebhookController extends Controller
                     // FIND CONTACT
                     // ======================================
 
-                    $contact = Contact::firstOrCreate(
-
-                        [
-
-                            'tenant_id' => $setting->tenant_id,
-
-                            'phone' => $waId
-
-                        ],
-
-                        [
-
-                            'name' => $profileName
-
-                        ]
-
+                    $contactResolver = app(\App\Services\WhatsAppContactResolver::class);
+                    $contact = $contactResolver->resolve(
+                        (int) $setting->tenant_id,
+                        (string) $waId,
+                        $profileName
                     );
 
 
@@ -1044,6 +1033,8 @@ class WhatsappWebhookController extends Controller
                         &&
 
                         $contact->name !== $profileName
+                        &&
+                        $contactResolver->hasPlaceholderName($contact, (string) $waId)
 
                     ) {
 
