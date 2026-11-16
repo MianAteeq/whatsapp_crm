@@ -11,7 +11,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'password', 'avatar', 'status', 'tenant_id', 'role', 'email_verified_at'])]
+#[Fillable(['name', 'email', 'password', 'avatar', 'status', 'tenant_id', 'tenant_role_id', 'role', 'email_verified_at'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -34,4 +34,6 @@ class User extends Authenticatable
 {
     return $this->belongsTo(Tenant::class);
 }
+public function tenantRole() { return $this->belongsTo(TenantRole::class); }
+public function hasPermission(string $permission): bool { return app(\App\Services\PhaseOne\AccessService::class)->can($this,$permission); }
 }

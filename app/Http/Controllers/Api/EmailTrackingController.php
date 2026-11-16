@@ -57,6 +57,9 @@ class EmailTrackingController extends Controller
                 'details' => 'Unsubscribed via email campaign link.',
             ]
         );
+        $tenantId = (int) $campaign->tenant_id;
+        $contact = \App\Models\Contact::where('tenant_id', $tenantId)->where('email_normalized', $email)->first();
+        if ($contact) \App\Models\ContactCommunicationPreference::updateOrCreate(['tenant_id'=>$tenantId,'contact_id'=>$contact->id],['email_allowed'=>false,'source'=>'unsubscribe_link','reason'=>'Recipient used unsubscribe link','email_unsubscribed_at'=>now()]);
 
         // 2. Update recipient status if present
         $recipient = EmailCampaignRecipient::where('campaign_id', $campaignId)

@@ -39,6 +39,8 @@ class Contact extends Model
         'last_scraped_at',
         'last_enriched_at',
         'enrichment_attempts',
+        'email_verification_status',
+        'email_verification_checked_at',
     ];
 
     protected $casts = [
@@ -49,6 +51,7 @@ class Contact extends Model
         'last_enriched_at' => 'datetime',
         'enrichment_attempts' => 'integer',
         'birthday' => 'date',
+        'email_verification_checked_at' => 'datetime',
     ];
 
     public function business()
@@ -90,6 +93,10 @@ class Contact extends Model
     {
         return $this->hasMany(EmailSuppression::class, 'contact_id');
     }
+    public function communicationPreference() { return $this->hasOne(ContactCommunicationPreference::class); }
+    public function opportunities() { return $this->hasMany(Opportunity::class); }
+    public function tasks() { return $this->hasMany(CrmTask::class); }
+    public function appointments() { return $this->hasMany(Appointment::class); }
 
     protected static function booted()
     {

@@ -1,0 +1,3 @@
+<?php
+namespace App\Models; use Illuminate\Database\Eloquent\Model;
+class SalesActivity extends Model { protected $fillable=['tenant_id','user_id','activity_type','subject_type','subject_id','contact_id','business_id','opportunity_id','title','description','metadata','occurred_at']; protected $casts=['metadata'=>'array','occurred_at'=>'datetime']; public function user(){return $this->belongsTo(User::class);} public function contact(){return $this->belongsTo(Contact::class);} public function company(){return $this->belongsTo(Business::class,'business_id');} public function opportunity(){return $this->belongsTo(Opportunity::class);} }

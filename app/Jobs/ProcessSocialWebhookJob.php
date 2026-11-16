@@ -293,6 +293,8 @@ class ProcessSocialWebhookJob implements ShouldQueue
                 'status' => SocialConversation::STATUS_OPEN,
             ]);
 
+            app(\App\Services\InboxSlaService::class)->reconcile($tenantId, $platform, $conversation->id, $conversation->status);
+
             $eventRecord->update(['processed' => true, 'processed_at' => now()]);
 
             Log::info("[ProcessSocialWebhookJob] Successfully persisted incoming {$platform} message {$mid} for conversation #{$conversation->id}");
@@ -600,6 +602,8 @@ class ProcessSocialWebhookJob implements ShouldQueue
             'is_unread' => $isAgent ? $conv->is_unread : true,
             'unread_count' => $isAgent ? $conv->unread_count : ($conv->unread_count + 1),
         ]);
+
+        app(\App\Services\InboxSlaService::class)->reconcile($tenantId, $account->platform, $conv->id, $conv->status);
 
         $eventRecord->update(['processed' => true, 'processed_at' => now()]);
 

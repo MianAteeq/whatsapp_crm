@@ -174,6 +174,11 @@ class SendCampaignJob implements ShouldQueue
                     continue;
                 }
 
+                if ($contact->communicationPreference && !$contact->communicationPreference->whatsapp_allowed) {
+                    $campaignContact->update(['status' => 'opted_out']);
+                    continue;
+                }
+
 
 
                 // ==================================================

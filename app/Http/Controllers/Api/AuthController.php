@@ -43,6 +43,10 @@ class AuthController extends Controller
         $token = $user->createToken('auth_token')->plainTextToken;
 
         $user->load('tenant');
+        app(\App\Services\PhaseOne\AccessService::class)->ensureRoles((int)$tenant->id);
+        $ownerRole = \App\Models\TenantRole::where('tenant_id',$tenant->id)->where('slug','owner')->first();
+        $user->update(['tenant_role_id'=>$ownerRole?->id,'role'=>'owner']);
+        $user->load('tenant','tenantRole');
 
         return response()->json([
             'message' => 'Registered successfully',
@@ -124,7 +128,8 @@ class AuthController extends Controller
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
-        $user->load('tenant');
+        $user->load('tenant', 'tenantRole');
+        $user->setAttribute('permissions', array_values(array_filter(\App\Services\PhaseOne\AccessService::CATALOG, fn($permission) => app(\App\Services\PhaseOne\AccessService::class)->can($user, $permission))));
 
         return response()->json([
             'message' => 'Login successful',

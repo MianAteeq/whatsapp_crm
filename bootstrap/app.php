@@ -15,9 +15,11 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'superadmin' => \App\Http\Middleware\AdminMiddleware::class,
+            'tenant.permission' => \App\Http\Middleware\RequireTenantPermission::class,
         ]);
         $middleware->appendToGroup('api', [
             \App\Http\Middleware\CheckUserStatus::class,
+            \App\Http\Middleware\AuditAuthenticatedMutation::class,
         ]);
         $middleware->validateCsrfTokens(except: [
             'webhook/*',

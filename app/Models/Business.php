@@ -30,6 +30,7 @@ class Business extends Model
         'source_details',
         'first_discovered_at',
         'last_discovered_at',
+        'owner_id', 'email', 'notes', 'status', 'industry', 'linkedin_url', 'employee_count',
     ];
 
     protected $casts = [
@@ -59,4 +60,9 @@ class Business extends Model
     {
         return $this->hasMany(ScrapeResult::class, 'business_id');
     }
+    public function owner() { return $this->belongsTo(User::class, 'owner_id'); }
+    public function opportunities() { return $this->hasMany(Opportunity::class); }
+    public function tasks() { return $this->hasMany(CrmTask::class); }
+    public function appointments() { return $this->hasMany(Appointment::class); }
+    public function activities() { return $this->hasMany(SalesActivity::class)->latest('occurred_at'); }
 }

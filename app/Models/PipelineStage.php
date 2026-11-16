@@ -1,0 +1,3 @@
+<?php
+namespace App\Models; use Illuminate\Database\Eloquent\Model;
+class PipelineStage extends Model { protected $fillable=['tenant_id','pipeline_id','name','color','position','probability','is_won','is_lost','rules','required_fields','allowed_role_slugs']; protected $casts=['is_won'=>'boolean','is_lost'=>'boolean','probability'=>'integer','position'=>'integer','rules'=>'array','required_fields'=>'array','allowed_role_slugs'=>'array']; public function pipeline(){return $this->belongsTo(SalesPipeline::class);} public function opportunities(){return $this->hasMany(Opportunity::class,'stage_id');} }

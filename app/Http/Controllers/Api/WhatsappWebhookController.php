@@ -667,13 +667,9 @@ class WhatsappWebhookController extends Controller
                     // DUPLICATE CHECK
                     // ======================================
 
-                    $alreadyExists = Message::where(
-
-                        'message_id',
-
-                        $incomingMessage['id'] ?? null
-
-                    )->exists();
+                    $alreadyExists = Message::where('tenant_id', $setting->tenant_id)
+                        ->where('message_id', $incomingMessage['id'] ?? null)
+                        ->exists();
 
 
 
@@ -1127,6 +1123,8 @@ class WhatsappWebhookController extends Controller
 
                     ]);
 
+                    app(\App\Services\InboxSlaService::class)->reconcile($setting->tenant_id, 'whatsapp', $conversation->id);
+
 
 
                     // ======================================
@@ -1195,6 +1193,7 @@ class WhatsappWebhookController extends Controller
                                 'conversation_id' => $conversation->id,
                                 'message_id' => $metaResponse['messages'][0]['id'] ?? 'auto_' . uniqid(),
                                 'direction' => 'outgoing',
+                                'origin_type' => 'ai',
                                 'message' => $replyText,
                                 'type' => 'text',
                                 'status' => 'sent',

@@ -45,8 +45,18 @@ class WhatsappMessageController extends Controller
             auth()->user()->tenant_id
         )->findOrFail($request->conversation_id);
 
+        $lastInboundAt = Message::where('tenant_id', auth()->user()->tenant_id)
+            ->where('conversation_id', $conversation->id)
+            ->where('direction', 'incoming')
+            ->latest('created_at')
+            ->value('created_at');
+        if (!$lastInboundAt || now()->diffInHours($lastInboundAt, true) > 24) {
+            return response()->json(['message' => 'The WhatsApp customer-service window is closed. Use an approved WhatsApp template.'], 422);
+        }
+
         // Get contact from conversation
         $contact = $conversation->contact;
+        if ($contact?->communicationPreference && !$contact->communicationPreference->whatsapp_allowed) return response()->json(['message'=>'This contact has opted out of WhatsApp messages.'],422);
 
         // Retrieve WhatsApp settings for authenticated tenant
         $setting = WhatsappSetting::where(
@@ -73,8 +83,10 @@ class WhatsappMessageController extends Controller
         Message::create([
             'tenant_id' => auth()->user()->tenant_id,
             'conversation_id' => $conversation->id,
+            'sender_user_id' => auth()->id(),
             'message_id' => $response['messages'][0]['id'] ?? null,
             'direction' => 'outgoing',
+            'origin_type' => 'human',
             'message' => $request->message,
             'type' => 'text',
             'status' => 'sent',
@@ -86,6 +98,7 @@ class WhatsappMessageController extends Controller
             'last_message' => $request->message,
             'last_message_at' => now(),
         ]);
+        app(\App\Services\InboxSlaService::class)->reconcile((int) auth()->user()->tenant_id, 'whatsapp', (int) $conversation->id);
 
         return response()->json([
             'success' => true,
@@ -115,6 +128,15 @@ class WhatsappMessageController extends Controller
             'tenant_id',
             auth()->user()->tenant_id
         )->findOrFail($request->conversation_id);
+
+        $lastInboundAt = Message::where('tenant_id', auth()->user()->tenant_id)
+            ->where('conversation_id', $conversation->id)
+            ->where('direction', 'incoming')
+            ->latest('created_at')
+            ->value('created_at');
+        if (!$lastInboundAt || now()->diffInHours($lastInboundAt, true) > 24) {
+            return response()->json(['message' => 'The WhatsApp customer-service window is closed. Use an approved WhatsApp template.'], 422);
+        }
 
         // Get contact from conversation
         $contact = $conversation->contact;
@@ -195,8 +217,10 @@ class WhatsappMessageController extends Controller
         Message::create([
             'tenant_id' => auth()->user()->tenant_id,
             'conversation_id' => $conversation->id,
+            'sender_user_id' => auth()->id(),
             'message_id' => $response['messages'][0]['id'] ?? null,
             'direction' => 'outgoing',
+            'origin_type' => 'human',
             'message' => null,
             'type' => $type,
             'status' => 'sent',
@@ -212,6 +236,7 @@ class WhatsappMessageController extends Controller
             'last_message' => '📎 Attachment',
             'last_message_at' => now(),
         ]);
+        app(\App\Services\InboxSlaService::class)->reconcile((int) auth()->user()->tenant_id, 'whatsapp', (int) $conversation->id);
 
         return response()->json([
             'success' => true,
@@ -541,8 +566,10 @@ class WhatsappMessageController extends Controller
         Message::create([
             'tenant_id'       => auth()->user()->tenant_id,
             'conversation_id' => $conversation->id,
+            'sender_user_id'  => auth()->id(),
             'message_id'      => $response['messages'][0]['id'] ?? null,
             'direction'       => 'outgoing',
+            'origin_type'     => 'human',
             'message'         => $messageText,
             'type'            => 'template',
             'status'          => $isSuccess ? 'sent' : 'failed',
@@ -640,6 +667,7 @@ class WhatsappMessageController extends Controller
                     'conversation_id' => $conversation->id,
                     'message_id' => 'auto_sim_' . uniqid(),
                     'direction' => 'outgoing',
+                    'origin_type' => 'ai',
                     'message' => $aiReplyText,
                     'type' => 'text',
                     'status' => 'sent',

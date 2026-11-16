@@ -11,3 +11,4 @@ Artisan::command('inspire', function () {
 // Schedule Social Media Planner automated publishing
 Schedule::command('social:publish-scheduled')->everyMinute();
 Schedule::command('email:process-scheduled')->everyMinute();
+Schedule::command('inbox:reconcile-sla')->everyMinute()->withoutOverlapping();

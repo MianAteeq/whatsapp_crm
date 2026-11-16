@@ -232,6 +232,8 @@ class ContactController extends Controller
 
         $phoneNormalizer = app(\App\Services\Scraper\PhoneNormalizationService::class);
         $phoneNorm = $phoneNormalizer->normalizeE164($request->phone);
+        $review = app(\App\Services\PhaseOne\ContactMatchingService::class)->guard((int)$tenant->id, $request->only(['name','email','phone','company']), null, 'manual');
+        if ($review) return response()->json(['message'=>'A matching contact already exists. This entry was added to duplicate review.','review_id'=>$review->id,'candidate_contact_ids'=>$review->candidate_contact_ids],409);
 
         // Separate Business Record Handling (Requirement 3)
         $businessId = $request->business_id;
@@ -293,6 +295,8 @@ class ContactController extends Controller
             }
         }
 
+        app(\App\Services\PhaseOne\AuditService::class)->record((int)$contact->tenant_id, 'contacts', 'contact.created', $contact, [], $contact->only(['name','email','phone','company']), 'Contact created');
+
         return response()->json([
             'message' => 'Contact created successfully',
             'data' => $contact->load(['tags', 'categories', 'business']),
@@ -319,8 +323,11 @@ class ContactController extends Controller
         $contact = Contact::where('tenant_id', $this->currentUser()->tenant_id)
             ->findOrFail($id);
 
+        $oldContact = $contact->only(['name','email','phone','company','status']);
         $phoneNormalizer = app(\App\Services\Scraper\PhoneNormalizationService::class);
         $phoneNorm = $request->phone ? $phoneNormalizer->normalizeE164($request->phone) : $contact->phone_normalized;
+        $review = app(\App\Services\PhaseOne\ContactMatchingService::class)->guard((int)$contact->tenant_id, ['name'=>$request->input('name',$contact->name),'email'=>$request->input('email',$contact->email),'phone'=>$request->input('phone',$contact->phone)], (int)$contact->id, 'manual_update');
+        if ($review) return response()->json(['message'=>'These details match another contact. The change was added to duplicate review.','review_id'=>$review->id],409);
 
         $businessId = $request->input('business_id', $contact->business_id);
         if (!$businessId && !empty($request->company)) {
@@ -366,6 +373,7 @@ class ContactController extends Controller
         } elseif ($request->filled('category_id')) {
             $contact->categories()->sync([(int) $request->category_id]);
         }
+        app(\App\Services\PhaseOne\AuditService::class)->record((int)$contact->tenant_id, 'contacts', 'contact.updated', $contact, $oldContact, $contact->fresh()->only(['name','email','phone','company','status']), 'Contact updated');
 
         return response()->json([
             'message' => 'Contact updated successfully',
@@ -381,6 +389,7 @@ class ContactController extends Controller
         $contact = Contact::where('tenant_id', $this->currentUser()->tenant_id)
             ->findOrFail($id);
 
+        app(\App\Services\PhaseOne\AuditService::class)->record((int)$contact->tenant_id, 'contacts', 'contact.deleted', $contact, $contact->only(['name','email','phone']), [], 'Contact deleted');
         $contact->delete();
 
         return response()->json([
@@ -406,6 +415,22 @@ class ContactController extends Controller
         return response()->json([
             'message' => count($request->ids) . ' contacts deleted successfully',
         ]);
+    }
+
+    public function import(Request $request)
+    {
+        $request->validate(['file' => 'required|file|mimes:csv,txt,xlsx,xls|max:10240', 'mappings' => 'nullable|string']);
+        $mappings = $request->filled('mappings') ? (json_decode($request->mappings, true) ?: []) : [];
+        $run = \App\Models\ContactImportRun::create(['tenant_id' => $this->currentUser()->tenant_id, 'user_id' => $this->currentUser()->id, 'file_name' => $request->file('file')->getClientOriginalName(), 'mapping' => $mappings, 'status' => 'processing']);
+        $import = new ContactsImport($mappings);
+        try {
+            Excel::import($import, $request->file('file'));
+            $run->update(['status' => 'completed', 'total_rows' => $import->totalRows, 'accepted_rows' => $import->acceptedRows, 'rejected_rows' => $import->rejectedRows, 'errors' => array_slice($import->errors, 0, 500), 'completed_at' => now()]);
+            return response()->json(['message' => 'Import completed', 'success_count' => $import->acceptedRows, 'rejected_count' => $import->rejectedRows, 'import_id' => $run->id]);
+        } catch (\Throwable $e) {
+            $run->update(['status' => 'failed', 'errors' => [['message' => $e->getMessage()]], 'completed_at' => now()]);
+            throw $e;
+        }
     }
 
     /**

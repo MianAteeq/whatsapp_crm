@@ -81,6 +81,13 @@ class SendEmailBatchJob implements ShouldQueue
             ->get();
 
         foreach ($recipients as $recipient) {
+            $preference = $recipient->contact?->communicationPreference;
+            if ($preference && !$preference->email_allowed) {
+                $recipient->update(['status' => EmailCampaignRecipient::STATUS_UNSUBSCRIBED, 'error_message' => 'Contact has opted out of email.']);
+                continue;
+            }
+            [$verified, $verificationError] = app(\App\Services\PhaseOne\RecipientEmailVerificationService::class)->allowed((int)$campaign->tenant_id, $recipient->contact, $recipient->email);
+            if (!$verified) { $recipient->update(['status'=>EmailCampaignRecipient::STATUS_FAILED,'error_message'=>$verificationError]); continue; }
             // Re-check campaign state between recipients
             $campaign->refresh();
             if (in_array($campaign->status, [EmailCampaign::STATUS_PAUSED, EmailCampaign::STATUS_CANCELLED])) {
@@ -119,10 +126,11 @@ class SendEmailBatchJob implements ShouldQueue
                 $textBody = EmailPersonalizationService::render($campaign->text_body, $variables);
 
                 // Ensure unsubscribe footer is present if not already embedded
-                if (!str_contains($htmlBody, 'unsubscribe')) {
+                $contactPolicy = \App\Models\TenantContactPolicy::firstOrCreate(['tenant_id'=>$campaign->tenant_id]);
+                if ($contactPolicy->unsubscribe_footer_enabled && !str_contains(strtolower($htmlBody), 'unsubscribe')) {
                     $footer = '<div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; text-align: center; font-family: sans-serif;">'
                         . '<p>You received this email because you are in contact with ' . htmlspecialchars($campaign->from_name) . '.</p>'
-                        . '<p><a href="' . htmlspecialchars($unsubscribeUrl) . '" style="color: #64748b; text-decoration: underline;">Unsubscribe from marketing emails</a></p>'
+                        . '<p><a href="' . htmlspecialchars($unsubscribeUrl) . '" style="color: #64748b; text-decoration: underline;">' . htmlspecialchars($contactPolicy->unsubscribe_label) . '</a></p>'
                         . '</div>';
                     $htmlBody .= $footer;
                 }

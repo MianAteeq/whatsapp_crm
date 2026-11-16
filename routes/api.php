@@ -18,6 +18,10 @@ use App\Http\Controllers\Api\WhatsappSettingController;
 use App\Http\Controllers\Api\WhatsappTemplateController;
 use App\Http\Controllers\Api\WhatsappWebhookController;
 use App\Http\Controllers\Api\WhatsappBillingController;
+use App\Http\Controllers\Api\BusinessProfileController;
+use App\Http\Controllers\Api\WorkspaceGovernanceController;
+use App\Http\Controllers\Api\SalesWorkspaceController;
+use App\Http\Controllers\Api\UnifiedInboxController;
 use App\Http\Controllers\CampaignController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Api\SystemSettingsController;
@@ -136,6 +140,58 @@ Route::post('/public/builder/submit/{slug}', [PublicBuilderController::class, 's
 // ============================================
 
 Route::middleware('auth:sanctum')->group(function () {
+    Route::get('sales/bootstrap', [SalesWorkspaceController::class, 'bootstrap'])->middleware('tenant.permission:sales.view');
+    Route::get('sales/overview', [SalesWorkspaceController::class, 'overview'])->middleware('tenant.permission:sales.view');
+    Route::get('sales/opportunities', [SalesWorkspaceController::class, 'opportunities'])->middleware('tenant.permission:sales.view');
+    Route::get('sales/opportunities/{opportunity}', [SalesWorkspaceController::class, 'opportunity'])->middleware('tenant.permission:sales.view');
+    Route::post('sales/pipelines', [SalesWorkspaceController::class, 'savePipeline'])->middleware('tenant.permission:sales.manage');
+    Route::delete('sales/pipelines/{pipeline}', [SalesWorkspaceController::class, 'deletePipeline'])->middleware('tenant.permission:sales.manage');
+    Route::post('sales/stages', [SalesWorkspaceController::class, 'saveStage'])->middleware('tenant.permission:sales.manage');
+    Route::delete('sales/stages/{stage}', [SalesWorkspaceController::class, 'deleteStage'])->middleware('tenant.permission:sales.manage');
+    Route::post('sales/opportunities', [SalesWorkspaceController::class, 'saveOpportunity'])->middleware('tenant.permission:sales.manage');
+    Route::patch('sales/opportunities/{opportunity}/stage', [SalesWorkspaceController::class, 'moveOpportunity'])->middleware('tenant.permission:sales.manage');
+    Route::delete('sales/opportunities/{opportunity}', [SalesWorkspaceController::class, 'deleteOpportunity'])->middleware('tenant.permission:sales.manage');
+    Route::get('sales/tasks', [SalesWorkspaceController::class, 'tasks'])->middleware('tenant.permission:tasks.view');
+    Route::post('sales/tasks', [SalesWorkspaceController::class, 'saveTask'])->middleware('tenant.permission:tasks.manage');
+    Route::post('sales/tasks/{task}/complete', [SalesWorkspaceController::class, 'completeTask'])->middleware('tenant.permission:tasks.manage');
+    Route::delete('sales/tasks/{task}', [SalesWorkspaceController::class, 'deleteTask'])->middleware('tenant.permission:tasks.manage');
+    Route::get('sales/companies', [SalesWorkspaceController::class, 'companies'])->middleware('tenant.permission:companies.view');
+    Route::get('sales/companies/{company}', [SalesWorkspaceController::class, 'company'])->middleware('tenant.permission:companies.view');
+    Route::post('sales/companies', [SalesWorkspaceController::class, 'saveCompany'])->middleware('tenant.permission:companies.manage');
+    Route::delete('sales/companies/{company}', [SalesWorkspaceController::class, 'deleteCompany'])->middleware('tenant.permission:companies.manage');
+    Route::get('sales/appointments', [SalesWorkspaceController::class, 'appointments'])->middleware('tenant.permission:appointments.view');
+    Route::post('sales/appointments', [SalesWorkspaceController::class, 'saveAppointment'])->middleware('tenant.permission:appointments.manage');
+    Route::post('sales/appointments/{appointment}/reschedule', [SalesWorkspaceController::class, 'rescheduleAppointment'])->middleware('tenant.permission:appointments.manage');
+    Route::delete('sales/appointments/{appointment}', [SalesWorkspaceController::class, 'deleteAppointment'])->middleware('tenant.permission:appointments.manage');
+    Route::get('sales/configuration', [SalesWorkspaceController::class, 'configuration'])->middleware('tenant.permission:settings.view');
+    Route::post('sales/custom-fields', [SalesWorkspaceController::class, 'saveCustomField'])->middleware('tenant.permission:custom_fields.manage');
+    Route::delete('sales/custom-fields/{field}', [SalesWorkspaceController::class, 'deleteCustomField'])->middleware('tenant.permission:custom_fields.manage');
+    Route::get('sales/custom-fields/{type}/{id}/values', [SalesWorkspaceController::class, 'entityCustomValues'])->middleware('tenant.permission:contacts.view');
+    Route::put('sales/custom-fields/{type}/{id}/values', [SalesWorkspaceController::class, 'saveEntityCustomValues'])->middleware('tenant.permission:custom_fields.manage');
+    Route::post('sales/lists', [SalesWorkspaceController::class, 'saveList'])->middleware('tenant.permission:contacts.update');
+    Route::get('sales/lists/{list}/members', [SalesWorkspaceController::class, 'listMembers'])->middleware('tenant.permission:contacts.view');
+    Route::delete('sales/lists/{list}', [SalesWorkspaceController::class, 'deleteList'])->middleware('tenant.permission:contacts.update');
+    Route::post('sales/list-views', [SalesWorkspaceController::class, 'saveView'])->middleware('tenant.permission:settings.manage');
+    Route::delete('sales/list-views/{view}', [SalesWorkspaceController::class, 'deleteView'])->middleware('tenant.permission:settings.manage');
+    Route::post('sales/tag-categories', [SalesWorkspaceController::class, 'saveTagCategory'])->middleware('tenant.permission:settings.manage');
+    Route::delete('sales/tag-categories/{category}', [SalesWorkspaceController::class, 'deleteTagCategory'])->middleware('tenant.permission:settings.manage');
+    Route::post('sales/value-folders', [SalesWorkspaceController::class, 'saveFolder'])->middleware('tenant.permission:settings.manage');
+    Route::post('sales/reusable-values', [SalesWorkspaceController::class, 'saveReusableValue'])->middleware('tenant.permission:settings.manage');
+    Route::delete('sales/reusable-values/{value}', [SalesWorkspaceController::class, 'deleteReusableValue'])->middleware('tenant.permission:settings.manage');
+    Route::get('settings/business-profile', [BusinessProfileController::class, 'show']);
+    Route::post('settings/business-profile', [BusinessProfileController::class, 'update']);
+    Route::get('workspace/governance', [WorkspaceGovernanceController::class, 'overview'])->middleware('tenant.permission:settings.view');
+    Route::post('workspace/roles', [WorkspaceGovernanceController::class, 'saveRole'])->middleware('tenant.permission:users.manage');
+    Route::delete('workspace/roles/{role}', [WorkspaceGovernanceController::class, 'deleteRole'])->middleware('tenant.permission:users.manage');
+    Route::post('workspace/users', [WorkspaceGovernanceController::class, 'saveUser'])->middleware('tenant.permission:users.manage');
+    Route::delete('workspace/users/{user}', [WorkspaceGovernanceController::class, 'deleteUser'])->middleware('tenant.permission:users.manage');
+    Route::get('workspace/audit', [WorkspaceGovernanceController::class, 'audit'])->middleware('tenant.permission:audit.view');
+    Route::get('workspace/audit/export', [WorkspaceGovernanceController::class, 'exportAudit'])->middleware('tenant.permission:audit.export');
+    Route::put('workspace/communication-policy', [WorkspaceGovernanceController::class, 'savePolicy'])->middleware('tenant.permission:settings.manage');
+    Route::get('workspace/duplicate-reviews', [WorkspaceGovernanceController::class, 'duplicateReviews'])->middleware('tenant.permission:contacts.view');
+    Route::post('workspace/duplicate-reviews/{review}/resolve', [WorkspaceGovernanceController::class, 'resolveDuplicate'])->middleware('tenant.permission:contacts.update');
+    Route::get('contacts/{contact}/communication-preferences', [WorkspaceGovernanceController::class, 'contactPreferences'])->middleware('tenant.permission:contacts.view');
+    Route::put('contacts/{contact}/communication-preferences', [WorkspaceGovernanceController::class, 'saveContactPreferences'])->middleware('tenant.permission:contacts.update');
     // Real-Time WebSocket Authentication
     Route::match(['get', 'post'], '/broadcasting/auth', '\Illuminate\Broadcasting\BroadcastController@authenticate');
     Route::match(['get', 'post'], '/proxy/broadcasting/auth', '\Illuminate\Broadcasting\BroadcastController@authenticate');
@@ -161,29 +217,37 @@ Route::middleware('auth:sanctum')->group(function () {
     /**
      * Advanced search for contacts with filters
      */
-    Route::get('contacts/advance-search', [ContactController::class, 'advanceSearch']);
+    Route::get('contacts/advance-search', [ContactController::class, 'advanceSearch'])->middleware('tenant.permission:contacts.view');
 
     /**
      * Bulk delete contacts
      */
-    Route::post('contacts/batch-delete', [ContactController::class, 'batchDelete']);
+    Route::post('contacts/batch-delete', [ContactController::class, 'batchDelete'])->middleware('tenant.permission:contacts.delete');
 
     /**
      * Contact CRUD operations (Create, Read, Update, Delete)
      */
-    Route::apiResource('contacts', ContactController::class);
+    Route::get('contacts', [ContactController::class, 'index'])->middleware('tenant.permission:contacts.view');
+    Route::get('contacts/{contact}', [ContactController::class, 'show'])->middleware('tenant.permission:contacts.view');
+    Route::post('contacts', [ContactController::class, 'store'])->middleware('tenant.permission:contacts.create');
+    Route::match(['put','patch'], 'contacts/{contact}', [ContactController::class, 'update'])->middleware('tenant.permission:contacts.update');
+    Route::delete('contacts/{contact}', [ContactController::class, 'destroy'])->middleware('tenant.permission:contacts.delete');
 
     /**
      * Import contacts from file
      */
-    Route::post('contacts/import', [ContactController::class, 'import']);
+    Route::post('contacts/import', [ContactController::class, 'import'])->middleware('tenant.permission:contacts.import');
 
     // ---- Tag Management ----
 
     /**
      * Tag CRUD operations
      */
-    Route::apiResource('tags', TagController::class);
+    Route::get('tags', [TagController::class, 'index'])->middleware('tenant.permission:contacts.view');
+    Route::get('tags/{tag}', [TagController::class, 'show'])->middleware('tenant.permission:contacts.view');
+    Route::post('tags', [TagController::class, 'store'])->middleware('tenant.permission:contacts.update');
+    Route::match(['put','patch'], 'tags/{tag}', [TagController::class, 'update'])->middleware('tenant.permission:contacts.update');
+    Route::delete('tags/{tag}', [TagController::class, 'destroy'])->middleware('tenant.permission:contacts.update');
 
     // ---- Category Management (Category-Based CRM Architecture) ----
     Route::get('categories/{id}/email-stats', [\App\Http\Controllers\Api\CategoryController::class, 'emailStats']);
@@ -268,37 +332,51 @@ Route::middleware('auth:sanctum')->group(function () {
     /**
      * Retrieve all conversations
      */
-    Route::get('conversations', [ConversationController::class, 'index']);
+    Route::get('conversations', [ConversationController::class, 'index'])->middleware('tenant.permission:messages.view');
 
     /**
      * Retrieve messages for a specific conversation
      */
-    Route::get('conversations/{id}/messages', [ConversationController::class, 'messages']);
+    Route::get('conversations/{id}/messages', [ConversationController::class, 'messages'])->middleware('tenant.permission:messages.view');
 
     /**
      * Mark conversation as read
      */
-    Route::post('conversations/{id}/mark-read', [ConversationController::class, 'markRead']);
+    Route::post('conversations/{id}/mark-read', [ConversationController::class, 'markRead'])->middleware('tenant.permission:messages.view');
 
     /**
      * Toggle auto reply for a specific conversation
      */
-    Route::post('conversations/{id}/toggle-auto-reply', [ConversationController::class, 'toggleAutoReply']);
+    Route::post('conversations/{id}/toggle-auto-reply', [ConversationController::class, 'toggleAutoReply'])->middleware('tenant.permission:messages.send');
+
+    // ---- Professional Unified Inbox (WhatsApp, Facebook, Instagram) ----
+    Route::get('inbox/bootstrap', [UnifiedInboxController::class, 'bootstrap'])->middleware('tenant.permission:messages.view');
+    Route::get('inbox/conversations', [UnifiedInboxController::class, 'index'])->middleware('tenant.permission:messages.view');
+    Route::get('inbox/conversations/{channel}/{sourceId}', [UnifiedInboxController::class, 'show'])->middleware('tenant.permission:messages.view');
+    Route::patch('inbox/conversations/{channel}/{sourceId}/state', [UnifiedInboxController::class, 'updateState'])->middleware('tenant.permission:messages.view');
+    Route::post('inbox/conversations/{channel}/{sourceId}/notes', [UnifiedInboxController::class, 'addNote'])->middleware('tenant.permission:messages.send');
+    Route::get('inbox/snippets', [UnifiedInboxController::class, 'snippets'])->middleware('tenant.permission:snippets.view');
+    Route::post('inbox/snippets', [UnifiedInboxController::class, 'saveSnippet'])->middleware('tenant.permission:messages.send');
+    Route::delete('inbox/snippets/{snippet}', [UnifiedInboxController::class, 'deleteSnippet'])->middleware('tenant.permission:messages.send');
+    Route::post('inbox/conversations/{channel}/{sourceId}/render-snippet', [UnifiedInboxController::class, 'renderSnippet'])->middleware('tenant.permission:snippets.view');
+    Route::put('inbox/sla-policies', [UnifiedInboxController::class, 'saveSlaPolicy'])->middleware('tenant.permission:sla.manage');
+    Route::get('inbox/sla-report', [UnifiedInboxController::class, 'slaReport'])->middleware('tenant.permission:sla.view');
+    Route::post('inbox/conversations/{channel}/{sourceId}/tasks', [UnifiedInboxController::class, 'createLinkedTask'])->middleware('tenant.permission:tasks.manage');
 
     /**
      * Send a text message via WhatsApp
      */
-    Route::post('messages/send', [WhatsappMessageController::class, 'send']);
+    Route::post('messages/send', [WhatsappMessageController::class, 'send'])->middleware('tenant.permission:messages.send');
 
     /**
      * Simulate an incoming message from a contact
      */
-    Route::post('messages/simulate-incoming', [WhatsappMessageController::class, 'simulateIncoming']);
+    Route::post('messages/simulate-incoming', [WhatsappMessageController::class, 'simulateIncoming'])->middleware('tenant.permission:settings.manage');
 
     /**
      * Send a media message via WhatsApp
      */
-    Route::post('messages/send-media', [WhatsappMessageController::class, 'sendMedia']);
+    Route::post('messages/send-media', [WhatsappMessageController::class, 'sendMedia'])->middleware('tenant.permission:messages.send');
 
     // ---- WhatsApp Templates ----
 
@@ -316,7 +394,7 @@ Route::middleware('auth:sanctum')->group(function () {
      * Send a message using a WhatsApp template
      */
 
-    Route::post('whatsapp/templates/send', [WhatsappMessageController::class, 'sendTemplate']);
+    Route::post('whatsapp/templates/send', [WhatsappMessageController::class, 'sendTemplate'])->middleware('tenant.permission:messages.send');
 
     Route::post(
 
@@ -350,7 +428,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         [CampaignController::class, 'store']
 
-    );
+    )->middleware('tenant.permission:campaigns.manage');
 
     Route::get(
 
@@ -358,7 +436,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         [CampaignController::class, 'dashboard']
 
-    );
+    )->middleware('tenant.permission:campaigns.view');
 
     Route::get(
 
@@ -366,7 +444,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         [CampaignController::class, 'index']
 
-    );
+    )->middleware('tenant.permission:campaigns.view');
 
     Route::get(
 
@@ -374,7 +452,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         [CampaignController::class, 'show']
 
-    );
+    )->middleware('tenant.permission:campaigns.view');
 
     Route::delete(
 
@@ -382,17 +460,17 @@ Route::middleware('auth:sanctum')->group(function () {
 
         [CampaignController::class, 'destroy']
 
-    );
+    )->middleware('tenant.permission:campaigns.manage');
 
     // ---- Automation Routes ----
-    Route::get('automation/workflows', [AutomationController::class, 'index']);
-    Route::post('automation/workflows', [AutomationController::class, 'store']);
-    Route::get('automation/workflows/{id}', [AutomationController::class, 'show']);
-    Route::put('automation/workflows/{id}', [AutomationController::class, 'update']);
-    Route::delete('automation/workflows/{id}', [AutomationController::class, 'destroy']);
-    Route::post('automation/workflows/{id}/canvas', [AutomationController::class, 'saveCanvas']);
-    Route::get('automation/executions', [AutomationController::class, 'executions']);
-    Route::get('automation/dashboard-stats', [AutomationController::class, 'dashboardStats']);
+    Route::get('automation/workflows', [AutomationController::class, 'index'])->middleware('tenant.permission:automation.view');
+    Route::post('automation/workflows', [AutomationController::class, 'store'])->middleware('tenant.permission:automation.manage');
+    Route::get('automation/workflows/{id}', [AutomationController::class, 'show'])->middleware('tenant.permission:automation.view');
+    Route::put('automation/workflows/{id}', [AutomationController::class, 'update'])->middleware('tenant.permission:automation.manage');
+    Route::delete('automation/workflows/{id}', [AutomationController::class, 'destroy'])->middleware('tenant.permission:automation.manage');
+    Route::post('automation/workflows/{id}/canvas', [AutomationController::class, 'saveCanvas'])->middleware('tenant.permission:automation.manage');
+    Route::get('automation/executions', [AutomationController::class, 'executions'])->middleware('tenant.permission:automation.view');
+    Route::get('automation/dashboard-stats', [AutomationController::class, 'dashboardStats'])->middleware('tenant.permission:automation.view');
 
     // ---- SaaS Super Admin Panel Routes ----
     Route::middleware('superadmin')->prefix('admin')->group(function () {
@@ -444,13 +522,13 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // ---- Email Campaigns, Templates, & Provider Settings ----
-    Route::get('contacts/{id}/email-activities', [ContactController::class, 'emailActivities']);
-    Route::get('contacts/{id}/scraper-history', [ContactController::class, 'scraperHistory']);
+    Route::get('contacts/{id}/email-activities', [ContactController::class, 'emailActivities'])->middleware('tenant.permission:contacts.view');
+    Route::get('contacts/{id}/scraper-history', [ContactController::class, 'scraperHistory'])->middleware('tenant.permission:contacts.view');
 
     // Email Settings
-    Route::get('email/settings', [EmailSettingController::class, 'show']);
-    Route::post('email/settings', [EmailSettingController::class, 'store']);
-    Route::post('email/settings/test', [EmailSettingController::class, 'testConnection']);
+    Route::get('email/settings', [EmailSettingController::class, 'show'])->middleware('tenant.permission:settings.view');
+    Route::post('email/settings', [EmailSettingController::class, 'store'])->middleware('tenant.permission:settings.manage');
+    Route::post('email/settings/test', [EmailSettingController::class, 'testConnection'])->middleware('tenant.permission:settings.manage');
 
     // Email Sending Domains (Mailtrap Multi-tenant Verification)
     Route::get('email/sending-domains', [\App\Http\Controllers\Api\EmailSendingDomainController::class, 'index']);
@@ -467,15 +545,19 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Email Campaigns
     Route::post('email/ai/generate', [EmailCampaignController::class, 'generateWithAi']);
-    Route::post('email/campaigns/estimate-audience', [EmailCampaignController::class, 'estimateAudience']);
-    Route::post('email/campaigns/send-test', [EmailCampaignController::class, 'sendTest']);
-    Route::post('email/campaigns/{id}/launch', [EmailCampaignController::class, 'launch']);
-    Route::post('email/campaigns/{id}/pause', [EmailCampaignController::class, 'pause']);
-    Route::post('email/campaigns/{id}/resume', [EmailCampaignController::class, 'resume']);
-    Route::post('email/campaigns/{id}/cancel', [EmailCampaignController::class, 'cancel']);
-    Route::post('email/campaigns/{id}/duplicate', [EmailCampaignController::class, 'duplicate']);
-    Route::get('email/campaigns/{id}/report', [EmailCampaignController::class, 'report']);
-    Route::apiResource('email/campaigns', EmailCampaignController::class);
+    Route::post('email/campaigns/estimate-audience', [EmailCampaignController::class, 'estimateAudience'])->middleware('tenant.permission:campaigns.view');
+    Route::post('email/campaigns/send-test', [EmailCampaignController::class, 'sendTest'])->middleware('tenant.permission:campaigns.manage');
+    Route::post('email/campaigns/{id}/launch', [EmailCampaignController::class, 'launch'])->middleware('tenant.permission:campaigns.launch');
+    Route::post('email/campaigns/{id}/pause', [EmailCampaignController::class, 'pause'])->middleware('tenant.permission:campaigns.manage');
+    Route::post('email/campaigns/{id}/resume', [EmailCampaignController::class, 'resume'])->middleware('tenant.permission:campaigns.manage');
+    Route::post('email/campaigns/{id}/cancel', [EmailCampaignController::class, 'cancel'])->middleware('tenant.permission:campaigns.manage');
+    Route::post('email/campaigns/{id}/duplicate', [EmailCampaignController::class, 'duplicate'])->middleware('tenant.permission:campaigns.manage');
+    Route::get('email/campaigns/{id}/report', [EmailCampaignController::class, 'report'])->middleware('tenant.permission:campaigns.view');
+    Route::get('email/campaigns', [EmailCampaignController::class, 'index'])->middleware('tenant.permission:campaigns.view');
+    Route::get('email/campaigns/{email_campaign}', [EmailCampaignController::class, 'show'])->middleware('tenant.permission:campaigns.view');
+    Route::post('email/campaigns', [EmailCampaignController::class, 'store'])->middleware('tenant.permission:campaigns.manage');
+    Route::match(['put','patch'], 'email/campaigns/{email_campaign}', [EmailCampaignController::class, 'update'])->middleware('tenant.permission:campaigns.manage');
+    Route::delete('email/campaigns/{email_campaign}', [EmailCampaignController::class, 'destroy'])->middleware('tenant.permission:campaigns.manage');
 
     // AI Marketing Agent Routes (DeepSeek Powered)
     Route::post('email/ai-agent/plan', [\App\Http\Controllers\Api\AiMarketingAgentController::class, 'plan']);
@@ -520,24 +602,24 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/posts/{id}', [SocialPostController::class, 'destroy']);
 
         // Unified Social Inbox (Facebook Messenger, Instagram Direct & Comments)
-        Route::get('/inbox/conversations', [SocialInboxController::class, 'conversations']);
-        Route::get('/inbox/conversations/{id}', [SocialInboxController::class, 'conversationShow']);
-        Route::get('/inbox/sync-delta', [SocialInboxController::class, 'syncDelta']);
-        Route::post('/inbox/conversations/sync', [SocialInboxController::class, 'sync']);
-        Route::post('/inbox/conversations/{id}/messages', [SocialInboxController::class, 'sendMessage']);
-        Route::put('/inbox/conversations/{id}/status', [SocialInboxController::class, 'updateStatus']);
-        Route::put('/inbox/conversations/{id}/priority', [SocialInboxController::class, 'updatePriority']);
-        Route::put('/inbox/conversations/{id}/unread', [SocialInboxController::class, 'toggleUnread']);
-        Route::put('/inbox/conversations/{id}/assign', [SocialInboxController::class, 'assign']);
-        Route::post('/inbox/conversations/{id}/notes', [SocialInboxController::class, 'addNote']);
-        Route::delete('/inbox/notes/{noteId}', [SocialInboxController::class, 'deleteNote']);
-        Route::post('/inbox/conversations/{id}/tags', [SocialInboxController::class, 'addTag']);
-        Route::delete('/inbox/conversations/{id}/tags', [SocialInboxController::class, 'removeTag']);
-        Route::post('/inbox/conversations/{id}/link-contact', [SocialInboxController::class, 'linkContact']);
-        Route::post('/inbox/conversations/{id}/create-contact', [SocialInboxController::class, 'createContact']);
-        Route::get('/inbox/assignable-users', [SocialInboxController::class, 'assignableUsers']);
-        Route::get('/inbox/quick-replies', [SocialInboxController::class, 'quickReplies']);
-        Route::post('/inbox/sync', [SocialInboxController::class, 'sync']);
+        Route::get('/inbox/conversations', [SocialInboxController::class, 'conversations'])->middleware('tenant.permission:messages.view');
+        Route::get('/inbox/conversations/{id}', [SocialInboxController::class, 'conversationShow'])->middleware('tenant.permission:messages.view');
+        Route::get('/inbox/sync-delta', [SocialInboxController::class, 'syncDelta'])->middleware('tenant.permission:messages.view');
+        Route::post('/inbox/conversations/sync', [SocialInboxController::class, 'sync'])->middleware('tenant.permission:inbox.manage');
+        Route::post('/inbox/conversations/{id}/messages', [SocialInboxController::class, 'sendMessage'])->middleware('tenant.permission:messages.send');
+        Route::put('/inbox/conversations/{id}/status', [SocialInboxController::class, 'updateStatus'])->middleware('tenant.permission:messages.send');
+        Route::put('/inbox/conversations/{id}/priority', [SocialInboxController::class, 'updatePriority'])->middleware('tenant.permission:inbox.manage');
+        Route::put('/inbox/conversations/{id}/unread', [SocialInboxController::class, 'toggleUnread'])->middleware('tenant.permission:messages.view');
+        Route::put('/inbox/conversations/{id}/assign', [SocialInboxController::class, 'assign'])->middleware('tenant.permission:inbox.manage');
+        Route::post('/inbox/conversations/{id}/notes', [SocialInboxController::class, 'addNote'])->middleware('tenant.permission:messages.send');
+        Route::delete('/inbox/notes/{noteId}', [SocialInboxController::class, 'deleteNote'])->middleware('tenant.permission:messages.send');
+        Route::post('/inbox/conversations/{id}/tags', [SocialInboxController::class, 'addTag'])->middleware('tenant.permission:messages.send');
+        Route::delete('/inbox/conversations/{id}/tags', [SocialInboxController::class, 'removeTag'])->middleware('tenant.permission:messages.send');
+        Route::post('/inbox/conversations/{id}/link-contact', [SocialInboxController::class, 'linkContact'])->middleware('tenant.permission:contacts.update');
+        Route::post('/inbox/conversations/{id}/create-contact', [SocialInboxController::class, 'createContact'])->middleware('tenant.permission:contacts.create');
+        Route::get('/inbox/assignable-users', [SocialInboxController::class, 'assignableUsers'])->middleware('tenant.permission:messages.view');
+        Route::get('/inbox/quick-replies', [SocialInboxController::class, 'quickReplies'])->middleware('tenant.permission:snippets.view');
+        Route::post('/inbox/sync', [SocialInboxController::class, 'sync'])->middleware('tenant.permission:inbox.manage');
 
         // Analytics
         Route::get('/analytics', [SocialAnalyticsController::class, 'index']);

@@ -1,0 +1,3 @@
+<?php
+namespace App\Models; use Illuminate\Database\Eloquent\Model;
+class Appointment extends Model { protected $fillable=['tenant_id','contact_id','business_id','opportunity_id','owner_id','rescheduled_from_id','title','starts_at','ends_at','timezone','status','location','notes','reminder_at','cancellation_reason','meeting_url','outcome']; protected $casts=['starts_at'=>'datetime','ends_at'=>'datetime','reminder_at'=>'datetime']; public function contact(){return $this->belongsTo(Contact::class);} public function company(){return $this->belongsTo(Business::class,'business_id');} public function opportunity(){return $this->belongsTo(Opportunity::class);} public function owner(){return $this->belongsTo(User::class,'owner_id');} }

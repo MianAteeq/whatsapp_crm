@@ -238,6 +238,8 @@ class SocialInboxService
             Log::debug("[SocialInboxService] Outbound broadcast skipped: " . $e->getMessage());
         }
 
+        app(\App\Services\InboxSlaService::class)->reconcile($tenantId, $conversation->platform, $conversation->id, $conversation->status);
+
         return $loadedMessage;
     }
 

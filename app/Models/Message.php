@@ -11,8 +11,10 @@ class Message extends Model
 
         'tenant_id',
         'conversation_id',
+        'sender_user_id',
         'message_id',
         'direction',
+        'origin_type',
         'message',
         'type',
         'status',

@@ -13,6 +13,10 @@ use Maatwebsite\Excel\Concerns\WithChunkReading;
 class ContactsImport implements ToCollection, WithHeadingRow, WithChunkReading
 {
     protected $mappings;
+    public int $totalRows = 0;
+    public int $acceptedRows = 0;
+    public int $rejectedRows = 0;
+    public array $errors = [];
 
     public function __construct(array $mappings = [])
     {
@@ -81,29 +85,36 @@ class ContactsImport implements ToCollection, WithHeadingRow, WithChunkReading
         // Pre-create/fetch all tags in this chunk to avoid queries in the loop
         $tagCache = [];
         foreach ($allTagNames as $tagName) {
-            $tag = Tag::firstOrCreate(['name' => $tagName]);
+            $tag = Tag::firstOrCreate(['tenant_id' => $tenantId, 'name' => $tagName], ['color' => '#64748b']);
             $tagCache[$tagName] = $tag->id;
         }
 
         // Perform insert within a single database transaction
         \Illuminate\Support\Facades\DB::transaction(function () use ($rows, $tenantId, $existingPhones, $tagCache) {
-            foreach ($rows as $row) {
+            foreach ($rows as $index => $row) {
+                $this->totalRows++;
                 $name = $this->getRowValue($row, 'name');
                 $phone = $this->getRowValue($row, 'phone');
 
                 if ($name === '' || $phone === '') {
+                    $this->rejectedRows++; $this->errors[] = ['row' => $index + 2, 'message' => 'Name and phone are required.'];
                     continue;
                 }
 
                 if (in_array($phone, $existingPhones)) {
+                    $this->rejectedRows++; $this->errors[] = ['row' => $index + 2, 'message' => 'Duplicate phone number.'];
                     continue;
                 }
+
+                $email = $this->getRowValue($row, 'email') ?: null;
+                $review = app(\App\Services\PhaseOne\ContactMatchingService::class)->guard((int)$tenantId, ['name'=>$name,'phone'=>$phone,'email'=>$email], null, 'import');
+                if ($review) { $this->rejectedRows++; $this->errors[] = ['row' => $index + 2, 'message' => 'Possible duplicate sent to review.']; continue; }
 
                 $contact = Contact::create([
                     'tenant_id' => $tenantId,
                     'name'      => $name,
                     'phone'     => $phone,
-                    'email'     => $this->getRowValue($row, 'email') ?: null,
+                    'email'     => $email,
                     'company'   => $this->getRowValue($row, 'company') ?: null,
                     'job_title' => $this->getRowValue($row, 'job_title') ?: null,
                     'address'   => $this->getRowValue($row, 'address') ?: null,
@@ -111,6 +122,7 @@ class ContactsImport implements ToCollection, WithHeadingRow, WithChunkReading
                     'notes'     => $this->getRowValue($row, 'notes') ?: null,
                     'status'    => 'active',
                 ]);
+                $this->acceptedRows++;
 
                 $tagsValue = $this->getRowValue($row, 'tags');
                 if (!empty($tagsValue)) {

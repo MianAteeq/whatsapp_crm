@@ -7,6 +7,13 @@ use Illuminate\Database\Eloquent\Model;
 class Tenant extends Model
 {
     protected $guarded = [];
+
+    protected $appends = ['logo_url'];
+
+    public function getLogoUrlAttribute(): ?string
+    {
+        return $this->logo_path ? asset('storage/' . $this->logo_path) : null;
+    }
     public function users()
     {
         return $this->hasMany(User::class);

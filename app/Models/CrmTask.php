@@ -1,0 +1,3 @@
+<?php
+namespace App\Models; use Illuminate\Database\Eloquent\Model;
+class CrmTask extends Model { protected $table='crm_tasks'; protected $fillable=['tenant_id','owner_id','contact_id','business_id','opportunity_id','conversation_channel','conversation_source_id','title','description','status','priority','due_at','reminder_at','completed_at']; protected $casts=['due_at'=>'datetime','reminder_at'=>'datetime','completed_at'=>'datetime']; public function owner(){return $this->belongsTo(User::class,'owner_id');} public function contact(){return $this->belongsTo(Contact::class);} public function company(){return $this->belongsTo(Business::class,'business_id');} public function opportunity(){return $this->belongsTo(Opportunity::class);} }
