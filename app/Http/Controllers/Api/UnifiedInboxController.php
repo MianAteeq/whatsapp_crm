@@ -131,6 +131,7 @@ class UnifiedInboxController extends Controller
             'status' => ['sometimes', Rule::in(['open', 'pending', 'resolved'])],
             'priority' => ['sometimes', Rule::in(['low', 'normal', 'high', 'urgent'])],
             'is_starred' => 'sometimes|boolean', 'is_following' => 'sometimes|boolean', 'is_unread' => 'sometimes|boolean',
+            'is_auto_reply_active' => 'sometimes|boolean',
         ]);
         $state = InboxConversationState::firstOrCreate(['tenant_id' => $tenantId, 'channel' => $channel, 'source_id' => $sourceId]);
         $old = $state->toArray();
@@ -146,6 +147,11 @@ class UnifiedInboxController extends Controller
         if (array_key_exists('is_unread', $data)) $personal['unread_override'] = $data['is_unread'];
         $userState = InboxUserState::firstOrCreate(['tenant_id' => $tenantId, 'user_id' => $request->user()->id, 'channel' => $channel, 'source_id' => $sourceId]);
         if ($personal) $userState->update($personal);
+        if (array_key_exists('is_auto_reply_active', $data) && $channel === 'whatsapp') {
+            Conversation::where('tenant_id', $tenantId)->whereKey($sourceId)->update([
+                'is_auto_reply_active' => (bool) $data['is_auto_reply_active']
+            ]);
+        }
         if (array_key_exists('is_unread', $data)) $this->setSourceReadState($tenantId, $channel, $sourceId, $data['is_unread']);
         $audit->record($tenantId, 'inbox', 'conversation.updated', $state, $old, $state->fresh()->toArray(), "{$channel}:{$sourceId}");
         $slaState = $sla->reconcile($tenantId, $channel, $sourceId, $state->status);
@@ -243,8 +249,8 @@ class UnifiedInboxController extends Controller
 
     private function baseQuery(int $tenantId, int $userId)
     {
-        $whatsapp = DB::table('conversations as c')->leftJoin('contacts as ct', fn ($join) => $join->on('ct.id', '=', 'c.contact_id')->on('ct.tenant_id', '=', 'c.tenant_id'))->where('c.tenant_id', $tenantId)->selectRaw("c.tenant_id, 'whatsapp' channel, c.id source_id, c.contact_id, COALESCE(ct.name, c.wa_id) display_name, c.wa_id external_id, NULL avatar_url, c.last_message, c.last_message_at, c.unread_count, 'open' source_status, 'normal' source_priority, NULL source_assignee_id");
-        $social = DB::table('social_conversations as sc')->where('sc.tenant_id', $tenantId)->whereNull('sc.deleted_at')->selectRaw('sc.tenant_id, sc.platform channel, sc.id source_id, sc.contact_id, sc.participant_name display_name, COALESCE(sc.participant_username, sc.participant_id) external_id, sc.participant_avatar_url avatar_url, sc.last_message_preview last_message, sc.last_message_at, sc.unread_count, sc.status source_status, sc.priority source_priority, sc.assigned_to_user_id source_assignee_id');
+        $whatsapp = DB::table('conversations as c')->leftJoin('contacts as ct', fn ($join) => $join->on('ct.id', '=', 'c.contact_id')->on('ct.tenant_id', '=', 'c.tenant_id'))->where('c.tenant_id', $tenantId)->selectRaw("c.tenant_id, 'whatsapp' channel, c.id source_id, c.contact_id, COALESCE(ct.name, c.wa_id) display_name, c.wa_id external_id, NULL avatar_url, c.last_message, c.last_message_at, c.unread_count, 'open' source_status, 'normal' source_priority, NULL source_assignee_id, COALESCE(c.is_auto_reply_active, 1) is_auto_reply_active");
+        $social = DB::table('social_conversations as sc')->where('sc.tenant_id', $tenantId)->whereNull('sc.deleted_at')->selectRaw('sc.tenant_id, sc.platform channel, sc.id source_id, sc.contact_id, sc.participant_name display_name, COALESCE(sc.participant_username, sc.participant_id) external_id, sc.participant_avatar_url avatar_url, sc.last_message_preview last_message, sc.last_message_at, sc.unread_count, sc.status source_status, sc.priority source_priority, sc.assigned_to_user_id source_assignee_id, 1 is_auto_reply_active');
         $union = $whatsapp->unionAll($social);
         return DB::query()->fromSub($union, 'u')
             ->leftJoin('inbox_conversation_states as state', fn ($join) => $join->on('state.tenant_id', '=', 'u.tenant_id')->on('state.channel', '=', 'u.channel')->on('state.source_id', '=', 'u.source_id'))

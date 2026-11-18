@@ -6,6 +6,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AutomationWorkflow extends Model
 {
@@ -13,13 +14,39 @@ class AutomationWorkflow extends Model
 
     protected $fillable = [
         'tenant_id',
+        'folder_id',
         'name',
         'description',
+        'internal_notes',
         'status',
+        'reentry_policy',
+        'reentry_cooldown_minutes',
+        'stop_on_response',
+        'max_active_enrollments_per_contact',
+        'timezone_mode',
+        'execution_days',
+        'execution_start_time',
+        'execution_end_time',
+        'sender_type',
+        'sender_id',
+        'read_state_behavior',
+        'missed_execution_behavior',
         'version',
+        'lock_version',
+        'draft_saved_at',
+        'published_version_id',
         'created_by',
         'last_run_at',
         'next_run_at'
+    ];
+
+    protected $casts = [
+        'stop_on_response' => 'boolean',
+        'reentry_cooldown_minutes' => 'integer',
+        'max_active_enrollments_per_contact' => 'integer',
+        'lock_version' => 'integer',
+        'draft_saved_at' => 'datetime',
+        'execution_days' => 'array',
     ];
 
     public function nodes(): HasMany
@@ -42,21 +69,44 @@ class AutomationWorkflow extends Model
         return $this->hasMany(AutomationWorkflowVersion::class, 'workflow_id');
     }
 
+    public function pauseWindows(): HasMany
+    {
+        return $this->hasMany(AutomationPauseWindow::class, 'workflow_id');
+    }
+
+    public function folder(): BelongsTo
+    {
+        return $this->belongsTo(AutomationFolder::class, 'folder_id');
+    }
+
+    public function enrollments(): HasMany
+    {
+        return $this->hasMany(AutomationEnrollment::class, 'workflow_id');
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
     /**
      * Get the currently active published version snapshot.
      */
     public function activeVersion()
     {
-        return $this->versions()->where('status', 'active')->orderBy('id', 'desc')->first();
+        if ($this->published_version_id) {
+            return $this->versions()->whereKey($this->published_version_id)->first();
+        }
+        return $this->versions()->whereIn('status', ['published', 'active'])->orderBy('id', 'desc')->first();
     }
 
     /**
      * Snapshots current visual draft canvas nodes and connections into an immutable version.
      */
-    public function createVersionSnapshot(string $versionNumber): AutomationWorkflowVersion
+    public function createVersionSnapshot(string $versionNumber, ?int $createdBy = null, ?string $summary = null): AutomationWorkflowVersion
     {
         // Deactivate previous active versions
-        $this->versions()->update(['status' => 'deprecated']);
+        $this->versions()->whereIn('status', ['active', 'published'])->update(['status' => 'superseded']);
 
         // Snapshot current nodes
         $nodes = $this->nodes()->get()->map(function ($node) {
@@ -80,12 +130,17 @@ class AutomationWorkflow extends Model
             ];
         })->toArray();
 
-        return AutomationWorkflowVersion::create([
+        $version = AutomationWorkflowVersion::create([
             'workflow_id' => $this->id,
             'version_number' => $versionNumber,
-            'status' => 'active',
+            'status' => 'published',
+            'created_by' => $createdBy,
+            'change_summary' => $summary,
+            'published_at' => now(),
             'nodes_data' => $nodes,
             'connections_data' => $connections
         ]);
+        $this->forceFill(['published_version_id' => $version->id, 'version' => $versionNumber])->save();
+        return $version;
     }
 }

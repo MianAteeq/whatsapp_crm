@@ -566,6 +566,7 @@ class WhatsappSettingController extends Controller
             'is_universal_openai'  => !empty(config('services.openai.api_key') ?: env('OPENAI_API_KEY')),
             'company_prompt'       => $setting->company_prompt,
             'reply_language'       => $setting->reply_language ?? 'ar-SA',
+            'is_auto_reply_enabled'=> (bool)($setting->is_auto_reply_enabled ?? true),
         ];
     }
 
@@ -575,9 +576,10 @@ class WhatsappSettingController extends Controller
     public function updateAiSettings(Request $request)
     {
         $request->validate([
-            'openai_key'     => 'nullable|string',
-            'company_prompt' => 'nullable|string',
-            'reply_language' => 'nullable|string',
+            'openai_key'            => 'nullable|string',
+            'company_prompt'        => 'nullable|string',
+            'reply_language'        => 'nullable|string',
+            'is_auto_reply_enabled' => 'nullable|boolean',
         ]);
 
         $existing = WhatsappSetting::where('tenant_id', auth()->user()->tenant_id)->first();
@@ -590,14 +592,26 @@ class WhatsappSettingController extends Controller
         }
 
         $replyLang = $request->reply_language ?? ($existing?->reply_language ?? 'ar-SA');
+        $isAutoReply = $request->has('is_auto_reply_enabled')
+            ? $request->boolean('is_auto_reply_enabled')
+            : ($existing?->is_auto_reply_enabled ?? true);
+
+        $attributes = [
+            'openai_key'            => $openaiKey,
+            'company_prompt'        => $request->company_prompt,
+            'reply_language'        => $replyLang,
+            'is_auto_reply_enabled' => $isAutoReply,
+        ];
+
+        if (!$existing) {
+            $attributes['is_connected'] = false;
+            $attributes['is_registered'] = false;
+            $attributes['is_waba_subscribed'] = false;
+        }
 
         $setting = WhatsappSetting::updateOrCreate(
             ['tenant_id' => auth()->user()->tenant_id],
-            [
-                'openai_key'     => $openaiKey,
-                'company_prompt' => $request->company_prompt,
-                'reply_language' => $replyLang,
-            ]
+            $attributes
         );
 
         return response()->json([

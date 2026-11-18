@@ -1156,7 +1156,8 @@ class WhatsappWebhookController extends Controller
                     // Skip auto-reply if a workflow already handled the message
                     // ======================================
                     $activeOpenAiKey = \App\Services\OpenAiService::resolveApiKey($setting?->openai_key);
-                    if (!$workflowMatched && $conversation->is_auto_reply_active && !empty($activeOpenAiKey) && !empty($setting->company_prompt) && $messageType === 'text') {
+                    $isAutoReplyGlobal = $setting ? (bool)($setting->is_auto_reply_enabled ?? true) : true;
+                    if (!$workflowMatched && $conversation->is_auto_reply_active && $isAutoReplyGlobal && !empty($activeOpenAiKey) && !empty($setting->company_prompt) && $messageType === 'text') {
                         try {
                             $openAiService = new \App\Services\OpenAiService();
                             $replyText = $openAiService->generateResponse(

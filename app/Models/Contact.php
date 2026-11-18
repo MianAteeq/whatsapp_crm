@@ -27,6 +27,7 @@ class Contact extends Model
         'contact_type',
         'address',
         'birthday',
+        'timezone',
         'website',
         'notes',
         'status',

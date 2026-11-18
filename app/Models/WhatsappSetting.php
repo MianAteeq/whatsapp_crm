@@ -21,12 +21,14 @@ class WhatsappSetting extends Model
         'openai_key',
         'company_prompt',
         'reply_language',
+        'is_auto_reply_enabled',
     ];
 
     protected $casts = [
         'is_connected' => 'boolean',
         'is_registered' => 'boolean',
         'is_waba_subscribed' => 'boolean',
+        'is_auto_reply_enabled' => 'boolean',
     ];
 
     public function billingProfile()

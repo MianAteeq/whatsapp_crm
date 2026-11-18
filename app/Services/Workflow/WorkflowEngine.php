@@ -11,6 +11,7 @@ use App\Services\Workflow\Actions\ActionRegistry;
 use App\Services\Workflow\Conditions\ConditionRegistry;
 use App\Jobs\ExecuteWorkflowJob;
 use Carbon\Carbon;
+use Carbon\CarbonImmutable;
 use Log;
 
 class WorkflowEngine
@@ -34,9 +35,19 @@ class WorkflowEngine
             Log::error("[WorkflowEngine] Execution [{$executionId}] not found.");
             return;
         }
+        if (in_array($execution->status, ['cancelled', 'completed', 'skipped'], true)) {
+            return;
+        }
 
         $workflow = $execution->workflow;
         $contact = $execution->contact;
+
+        $nextAllowedAt = app(ExecutionSchedulePolicy::class)->nextAllowedAt($workflow, $contact);
+        if ($nextAllowedAt->greaterThan(CarbonImmutable::now('UTC')->addSecond())) {
+            $execution->update(['status' => 'paused', 'resume_at' => $nextAllowedAt]);
+            ExecuteWorkflowJob::dispatch($workflow->id, $contact?->id, $startNodeId, $execution->id)->delay($nextAllowedAt);
+            return;
+        }
 
         // Strict Tenant Isolation check
         if ($workflow->tenant_id && $contact && $contact->tenant_id !== $workflow->tenant_id) {
@@ -50,7 +61,10 @@ class WorkflowEngine
                 'started_at' => Carbon::now(),
                 'status' => 'running'
             ]);
+        } elseif ($execution->status !== 'running') {
+            $execution->update(['status' => 'running', 'resume_at' => null]);
         }
+        $execution->enrollment?->update(['status' => 'running', 'started_at' => $execution->enrollment->started_at ?: now()]);
 
         // 1. Resolve Workflow Version Snapshot
         $version = $execution->version;
@@ -132,6 +146,10 @@ class WorkflowEngine
 
         // Execution loop
         while ($currentNodeId) {
+            if ($execution->logs()->count() >= 1000) {
+                $execution->update(['status' => 'failed', 'last_error' => 'Workflow execution step limit exceeded.', 'finished_at' => now()]);
+                return;
+            }
             $node = $nodeMap[$currentNodeId] ?? null;
             if (!$node) {
                 break;
@@ -144,12 +162,31 @@ class WorkflowEngine
             $nodeTypeClass = $node['type'];
 
             // A. Trigger Nodes (just bridge to the next connected node)
-            if ($nodeTypeClass === 'trigger' || $nodeTypeClass === 'incoming_message' || $nodeTypeClass === 'keyword' || $nodeTypeClass === 'contact_created' || $nodeTypeClass === 'birthday' || $nodeTypeClass === 'schedule') {
+            if ($nodeTypeClass === 'trigger' || in_array($nodeTypeClass, ['incoming_message', 'keyword', 'contact_created', 'birthday', 'schedule', 'lead_form_submitted', 'click_to_whatsapp', 'appointment_created', 'appointment_updated', 'opportunity_created', 'opportunity_stage_changed', 'tag_added', 'tag_removed', 'review_received', 'incoming_webhook', 'stale_opportunity', 'staff_reply', 'tracked_link_clicked'], true)) {
+                AutomationLog::create([
+                    'execution_id' => $execution->id,
+                    'node_id' => $node['id'],
+                    'step_name' => $node['label'],
+                    'status' => 'success',
+                    'outcome' => 'completed',
+                    'message' => 'Trigger matched and enrollment started.',
+                    'input_snapshot' => ['config' => $node['config'] ?? []],
+                    'output_snapshot' => ['matched' => true],
+                    'execution_time_ms' => (int) ((microtime(true) - $startTime) * 1000),
+                ]);
                 $currentNodeId = $this->getNextNodeForHandle($connections, $currentNodeId, 'bottom');
                 continue;
             }
 
             // B. Condition Nodes
+            if ($nodeTypeClass === 'intent_branch') {
+                $body=strtolower((string)($context->getMessage()?->body??''));$positive=$node['config']['positive_terms']??['yes','interested','book','sure'];$negative=$node['config']['negative_terms']??['no','stop','not interested'];$intent='unknown';
+                foreach($positive as $term)if($term!==''&&str_contains($body,strtolower((string)$term))){$intent='positive';break;}
+                if($intent==='unknown')foreach($negative as $term)if($term!==''&&str_contains($body,strtolower((string)$term))){$intent='negative';break;}
+                AutomationLog::create(['execution_id'=>$execution->id,'node_id'=>$node['id'],'step_name'=>$node['label'],'status'=>'success','outcome'=>'completed','message'=>'Intent classified as '.strtoupper($intent).'.','input_snapshot'=>['message_present'=>$body!==''],'output_snapshot'=>['intent'=>$intent],'execution_time_ms'=>(int)((microtime(true)-$startTime)*1000)]);
+                $currentNodeId=$this->getNextNodeForHandle($connections,$currentNodeId,$intent,true);if(!$currentNodeId)break;continue;
+            }
+
             // if ($nodeTypeClass === 'condition') {
             //     try {
             //         // Resolve condition handler from config.field first, then fall back to label matching
@@ -367,7 +404,10 @@ if ($nodeTypeClass === 'condition') {
             'node_id' => $node['id'],
             'step_name' => $node['label'],
             'status' => 'success',
+            'outcome' => 'completed',
             'message' => 'Condition evaluated to '.($result ? 'TRUE' : 'FALSE'),
+            'input_snapshot' => ['config' => $config],
+            'output_snapshot' => ['result' => $result],
             'execution_time_ms' => $durationMs,
         ]);
 
@@ -410,7 +450,10 @@ if ($nodeTypeClass === 'condition') {
             'node_id' => $node['id'],
             'step_name' => $node['label'],
             'status' => 'failed',
+            'outcome' => 'failed',
             'message' => 'Condition evaluation failed.',
+            'input_snapshot' => ['config' => $config],
+            'output_snapshot' => ['exception' => get_class($e)],
             'errors' => $e->getMessage(),
             'execution_time_ms' => $durationMs,
         ]);
@@ -458,7 +501,10 @@ if ($nodeTypeClass === 'condition') {
                 Log::info("[WorkflowEngine] Resolved action type [{$actionType}] for node [{$node['id']}] (original type: [{$nodeTypeClass}], label: [{$node['label']}])");
 
                 $handler = $this->actionRegistry->make($actionType);
-                $response = $handler->execute($context, $node['config'] ?? []);
+                $actionConfig = $node['config'] ?? [];
+                $actionConfig['operation'] ??= $actionType;
+                $actionConfig['source_execution_id'] = $execution->id;
+                $response = $handler->execute($context, $actionConfig);
 
                 $durationMs = (int)((microtime(true) - $startTime) * 1000);
 
@@ -468,7 +514,10 @@ if ($nodeTypeClass === 'condition') {
                         'node_id' => $node['id'],
                         'step_name' => $node['label'],
                         'status' => 'success',
+                        'outcome' => 'completed',
                         'message' => $response->message ?: 'Action completed successfully.',
+                        'input_snapshot' => ['config' => $node['config'] ?? []],
+                        'output_snapshot' => ['status' => $response->status, 'variables' => $response->variables],
                         'execution_time_ms' => $durationMs
                     ]);
 
@@ -487,7 +536,10 @@ if ($nodeTypeClass === 'condition') {
                         'node_id' => $node['id'],
                         'step_name' => $node['label'],
                         'status' => 'success',
+                        'outcome' => 'pending',
                         'message' => $response->message ?: 'Workflow paused.',
+                        'input_snapshot' => ['config' => $node['config'] ?? []],
+                        'output_snapshot' => ['status' => $response->status, 'resume_at' => $response->resumeTime?->toIso8601String()],
                         'execution_time_ms' => $durationMs
                     ]);
 
@@ -518,13 +570,21 @@ if ($nodeTypeClass === 'condition') {
                             'node_id' => $node['id'],
                             'step_name' => $node['label'],
                             'status' => 'failed',
+                            'outcome' => 'retrying',
                             'message' => "Action failed: {$response->error}. Scheduling retry #{$execution->retry_count} in {$backoffMin} minutes.",
                             'errors' => $response->error,
+                            'input_snapshot' => ['config' => $node['config'] ?? []],
+                            'output_snapshot' => ['status' => $response->status, 'error' => $response->error],
                             'execution_time_ms' => $durationMs,
                             'retry_count' => $execution->retry_count
                         ]);
 
                         // Re-queue with delay
+                        $execution->update([
+                            'status' => 'retrying',
+                            'resume_at' => Carbon::now()->addMinutes($backoffMin),
+                            'last_error' => $response->error,
+                        ]);
                         ExecuteWorkflowJob::dispatch(
                             $workflow->id,
                             $contact->id,
@@ -541,8 +601,11 @@ if ($nodeTypeClass === 'condition') {
                         'node_id' => $node['id'],
                         'step_name' => $node['label'],
                         'status' => 'failed',
+                        'outcome' => 'failed',
                         'message' => "Action failed: {$response->error}. (Retries exhausted/unconfigured)",
                         'errors' => $response->error,
+                        'input_snapshot' => ['config' => $node['config'] ?? []],
+                        'output_snapshot' => ['status' => $response->status, 'error' => $response->error],
                         'execution_time_ms' => $durationMs
                     ]);
 
@@ -560,8 +623,11 @@ if ($nodeTypeClass === 'condition') {
                     'node_id' => $node['id'],
                     'step_name' => $node['label'],
                     'status' => 'failed',
+                    'outcome' => 'failed',
                     'message' => 'Action crashed unexpectedly.',
                     'errors' => $ex->getMessage(),
+                    'input_snapshot' => ['config' => $node['config'] ?? []],
+                    'output_snapshot' => ['exception' => get_class($ex)],
                     'execution_time_ms' => $durationMs
                 ]);
                 $execution->update([
@@ -577,8 +643,10 @@ if ($nodeTypeClass === 'condition') {
         $execution->update([
             'status' => 'completed',
             'finished_at' => Carbon::now(),
+            'completion_reason' => 'Workflow reached the end of the published path.',
             'current_node_id' => null
         ]);
+        $execution->enrollment?->update(['status' => 'completed', 'completed_at' => Carbon::now()]);
 
         Log::info("[WorkflowEngine] Completed execution [{$execution->id}] successfully.");
     }

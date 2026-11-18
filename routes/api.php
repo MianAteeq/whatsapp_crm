@@ -26,6 +26,7 @@ use App\Http\Controllers\CampaignController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Api\SystemSettingsController;
 use App\Http\Controllers\Api\AutomationController;
+use App\Http\Controllers\Api\PhaseFourAutomationController;
 use App\Http\Controllers\Api\EmailCampaignController;
 use App\Http\Controllers\Api\EmailTemplateController;
 use App\Http\Controllers\Api\EmailSettingController;
@@ -76,6 +77,7 @@ Route::get('/branding', [SystemSettingsController::class, 'branding']);
  * Public plans route
  */
 Route::get('/plans', [SystemSettingsController::class, 'publicPlans']);
+Route::get('/t/{token}', [PhaseFourAutomationController::class, 'visit'])->name('tracked-links.visit');
 
 /**
  * Public email tracking & unsubscribe routes
@@ -465,12 +467,51 @@ Route::middleware('auth:sanctum')->group(function () {
     // ---- Automation Routes ----
     Route::get('automation/workflows', [AutomationController::class, 'index'])->middleware('tenant.permission:automation.view');
     Route::post('automation/workflows', [AutomationController::class, 'store'])->middleware('tenant.permission:automation.manage');
+    Route::post('automation/workflows/bulk-pause', [AutomationController::class, 'bulkPause'])->middleware('tenant.permission:automation.manage');
+    Route::post('automation/workflows/bulk-move', [AutomationController::class, 'bulkMove'])->middleware('tenant.permission:automation.manage');
+    Route::post('automation/workflows/bulk-delete', [AutomationController::class, 'bulkDelete'])->middleware('tenant.permission:automation.manage');
     Route::get('automation/workflows/{id}', [AutomationController::class, 'show'])->middleware('tenant.permission:automation.view');
     Route::put('automation/workflows/{id}', [AutomationController::class, 'update'])->middleware('tenant.permission:automation.manage');
     Route::delete('automation/workflows/{id}', [AutomationController::class, 'destroy'])->middleware('tenant.permission:automation.manage');
+    Route::post('automation/workflows/{id}/duplicate', [AutomationController::class, 'duplicate'])->middleware('tenant.permission:automation.manage');
+    Route::post('automation/workflows/{id}/pause', [AutomationController::class, 'pause'])->middleware('tenant.permission:automation.manage');
+    Route::post('automation/workflows/{id}/resume', [AutomationController::class, 'resume'])->middleware('tenant.permission:automation.manage');
+    Route::post('automation/workflows/{id}/move', [AutomationController::class, 'moveToFolder'])->middleware('tenant.permission:automation.manage');
     Route::post('automation/workflows/{id}/canvas', [AutomationController::class, 'saveCanvas'])->middleware('tenant.permission:automation.manage');
+    Route::post('automation/workflows/{id}/validate', [AutomationController::class, 'validateWorkflow'])->middleware('tenant.permission:automation.manage');
+    Route::post('automation/workflows/{id}/publish', [AutomationController::class, 'publish'])->middleware('tenant.permission:automation.manage');
+    Route::get('automation/workflows/{id}/versions', [AutomationController::class, 'versions'])->middleware('tenant.permission:automation.view');
+    Route::post('automation/workflows/{id}/versions/{versionId}/restore', [AutomationController::class, 'restoreVersion'])->middleware('tenant.permission:automation.manage');
+    Route::post('automation/workflows/{id}/test', [AutomationController::class, 'testWorkflow'])->middleware('tenant.permission:automation.manage');
+    Route::post('automation/ai-draft', [AutomationController::class, 'aiDraft'])->middleware('tenant.permission:automation.manage');
+    Route::post('automation/workflows/{id}/search-replace', [AutomationController::class, 'searchReplace'])->middleware('tenant.permission:automation.manage');
+    Route::get('automation/workflows/{id}/pause-windows', [AutomationController::class, 'pauseWindows'])->middleware('tenant.permission:automation.view');
+    Route::post('automation/workflows/{id}/pause-windows', [AutomationController::class, 'storePauseWindow'])->middleware('tenant.permission:automation.manage');
+    Route::delete('automation/workflows/{id}/pause-windows/{windowId}', [AutomationController::class, 'deletePauseWindow'])->middleware('tenant.permission:automation.manage');
     Route::get('automation/executions', [AutomationController::class, 'executions'])->middleware('tenant.permission:automation.view');
+    Route::get('automation/executions/{id}', [AutomationController::class, 'executionDetail'])->middleware('tenant.permission:automation.view');
+    Route::post('automation/executions/{id}/retry', [AutomationController::class, 'retryExecution'])->middleware('tenant.permission:automation.manage');
+    Route::post('automation/executions/{id}/cancel', [AutomationController::class, 'cancelExecution'])->middleware('tenant.permission:automation.manage');
     Route::get('automation/dashboard-stats', [AutomationController::class, 'dashboardStats'])->middleware('tenant.permission:automation.view');
+    Route::get('automation/folders', [PhaseFourAutomationController::class, 'folders'])->middleware('tenant.permission:automation.view');
+    Route::post('automation/folders', [PhaseFourAutomationController::class, 'folders'])->middleware('tenant.permission:automation.manage');
+    Route::get('automation/workflows/{workflowId}/comments', [PhaseFourAutomationController::class, 'comments'])->middleware('tenant.permission:automation.view');
+    Route::post('automation/workflows/{workflowId}/comments', [PhaseFourAutomationController::class, 'comments'])->middleware('tenant.permission:automation.manage');
+    Route::get('automation/templates', [PhaseFourAutomationController::class, 'templates'])->middleware('tenant.permission:automation.view');
+    Route::post('automation/templates/{key}/create-workflow', [PhaseFourAutomationController::class, 'createFromTemplate'])->middleware('tenant.permission:automation.manage');
+    Route::get('automation/email-sequences', [PhaseFourAutomationController::class, 'sequences'])->middleware('tenant.permission:automation.view');
+    Route::post('automation/email-sequences', [PhaseFourAutomationController::class, 'sequences'])->middleware('tenant.permission:automation.manage');
+    Route::put('automation/email-sequences/{id}', [PhaseFourAutomationController::class, 'saveSequence'])->middleware('tenant.permission:automation.manage');
+    Route::post('automation/email-sequences/{id}/enroll', [PhaseFourAutomationController::class, 'enrollSequence'])->middleware('tenant.permission:automation.manage');
+    Route::get('automation/email-sequences/{id}/history', [PhaseFourAutomationController::class, 'sequenceHistory'])->middleware('tenant.permission:automation.view');
+    Route::get('automation/tracked-links', [PhaseFourAutomationController::class, 'trackedLinks'])->middleware('tenant.permission:automation.view');
+    Route::post('automation/tracked-links', [PhaseFourAutomationController::class, 'trackedLinks'])->middleware('tenant.permission:automation.manage');
+    Route::get('automation/bot-rules', [PhaseFourAutomationController::class, 'botRules'])->middleware('tenant.permission:automation.view');
+    Route::post('automation/bot-rules', [PhaseFourAutomationController::class, 'botRules'])->middleware('tenant.permission:automation.manage');
+    Route::put('automation/tracked-link-visits/{id}/classification', [PhaseFourAutomationController::class, 'overrideVisit'])->middleware('tenant.permission:automation.manage');
+    Route::get('automation/executions/{executionId}/troubleshoot', [PhaseFourAutomationController::class, 'troubleshoot'])->middleware('tenant.permission:automation.view');
+    Route::get('automation/alert-settings', [PhaseFourAutomationController::class, 'alertSettings'])->middleware('tenant.permission:automation.view');
+    Route::put('automation/alert-settings', [PhaseFourAutomationController::class, 'alertSettings'])->middleware('tenant.permission:automation.manage');
 
     // ---- SaaS Super Admin Panel Routes ----
     Route::middleware('superadmin')->prefix('admin')->group(function () {

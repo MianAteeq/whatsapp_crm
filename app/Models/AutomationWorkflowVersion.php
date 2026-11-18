@@ -16,13 +16,17 @@ class AutomationWorkflowVersion extends Model
         'workflow_id',
         'version_number',
         'status',
+        'created_by',
+        'change_summary',
+        'published_at',
         'nodes_data',
         'connections_data'
     ];
 
     protected $casts = [
         'nodes_data' => 'array',
-        'connections_data' => 'array'
+        'connections_data' => 'array',
+        'published_at' => 'datetime'
     ];
 
     public function workflow(): BelongsTo
